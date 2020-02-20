@@ -1,17 +1,21 @@
 //
 // Created by QuoTheWhite on 27/03/2019.
 //
-#include <stdio.h>
-#include <math.h>
-#include <time.h>
-#include <fstream>
-#include <cstdlib>
+//#include <stdio.h>
+//#include <math.h>
+//#include <time.h>
+//#include <fstream>
+//#include <cstdlib>
 //#include "openacc.h"
 
-// 4C++11 includes
-#include <vector>
+// 4 C++11 includes
+//#include <vector>
 
-typedef double real;
+//typedef double real;
+
+#include "common.hpp" // one for all includes
+#include "CurrentNa.hpp"
+
 
 // grid parameters
 #define numSegmentsX 0
@@ -141,6 +145,7 @@ real n_inf(real V) {
     return alpha_n(V) / (alpha_n(V) + beta_n(V));
 }
 
+/*
 #pragma acc routine
 real alpha_m(real V) {
     return 0.1*(V + 40.0)/(1.0 - exp(-(V + 40.0)/10.0));
@@ -170,7 +175,7 @@ real beta_h(real V) {
 real h_inf(real V) {
     return alpha_h(V) / (alpha_h(V) + beta_h(V));
 }
-
+*/
 
 
 void SetInitialConditions_CPU(real* V, real* m, real* n, real* h, real value) {
@@ -193,9 +198,9 @@ void SetInitialConditions_CPU(real* V, real* m, real* n, real* h, real value) {
             if (i == 0 || j == 0 || i == (numPointsX - 1) || j == (numPointsY - 1)) {
                 // TODO: find out about the values
                 V[idx] = VRest;
-                m[idx] = m_inf_CPU(VRest);
-                n[idx] = n_inf_CPU(VRest);
-                h[idx] = h_inf_CPU(VRest);
+                m[idx] = 0.1;//m_inf_CPU(VRest);
+                n[idx] = 0.1;//n_inf_CPU(VRest);
+                h[idx] = 0.1;//h_inf_CPU(VRest);
             }
             /*else if (idx == idxCenter) { // initial peak
                 // TODO: find out about the values
@@ -209,9 +214,9 @@ void SetInitialConditions_CPU(real* V, real* m, real* n, real* h, real value) {
                 //randomNumber =  ((real)(std::rand() % 20))/20.;
                 // TODO: find out about the values
                 V[idx] = VRest;
-                m[idx] = m_inf_CPU(VRest);
-                n[idx] = n_inf_CPU(VRest);
-                h[idx] = h_inf_CPU(VRest);
+                m[idx] = 0.1;//m_inf_CPU(VRest);
+                n[idx] = 0.1;//n_inf_CPU(VRest);
+                h[idx] = 0.1;//h_inf_CPU(VRest);
             }
 
         }
@@ -235,6 +240,7 @@ real I_Stim(int i, int j, real value) {
 
 // ion currents
 ///////////////////////////////////////////////////
+/*
 #pragma acc routine
 real CurrentNa(real V, real m, real n, real h) {
     real ENernst = 50.;
@@ -260,15 +266,15 @@ real CurrentLeak(real V, real m, real n, real h) {
 
     return gMax*(V - ENernst);
 }
-
+*/
 #pragma acc routine
 real TotalIonCurrent(real V, real m, real n, real h) {
     real iNa = CurrentNa(V, m, n, h);
-    real iK = CurrentK(V, m, n, h);
-    real iLeak = CurrentLeak(V, m, n, h);
+    //real iK = CurrentK(V, m, n, h);
+    //real iLeak = CurrentLeak(V, m, n, h);
 
     // TODO: check the sign of the expression below
-    return  -(iNa + iK + iLeak);
+    return  -(iNa);// + iK + iLeak);
 }
 
 
@@ -354,8 +360,8 @@ int main() {
                     mNew[idxCenter] = m_inf(VOld[idxCenter]) + (mOld[idxCenter] - m_inf(VOld[idxCenter]))
                                                                 * exp(-dt * (alpha_m(VOld[idxCenter]) + beta_m(VOld[idxCenter])));
 
-                    nNew[idxCenter] = n_inf(VOld[idxCenter]) + (nOld[idxCenter] - n_inf(VOld[idxCenter]))
-                                                                * exp(-dt * (alpha_n(VOld[idxCenter]) + beta_n(VOld[idxCenter])));
+                    //nNew[idxCenter] = n_inf(VOld[idxCenter]) + (nOld[idxCenter] - n_inf(VOld[idxCenter]))
+                    //                                            * exp(-dt * (alpha_n(VOld[idxCenter]) + beta_n(VOld[idxCenter])));
 
                     hNew[idxCenter] = h_inf(VOld[idxCenter]) + (hOld[idxCenter] - h_inf(VOld[idxCenter]))
                                                                 * exp(-dt * (alpha_h(VOld[idxCenter]) + beta_h(VOld[idxCenter])));
@@ -372,7 +378,7 @@ int main() {
                     // reaction step
                     VNew[idxCenter] += dt / Cm * (TotalIonCurrent(VOld[idxCenter], mOld[idxCenter],
                                                             nOld[idxCenter], hOld[idxCenter])
-                                                                        + I_Stim(i, j, 1e1));
+                                                                        + I_Stim(i, j, 0. /* 1e1 */));
 
                // } // else
             } // for
