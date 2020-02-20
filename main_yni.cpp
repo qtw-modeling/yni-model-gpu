@@ -16,6 +16,8 @@
 #include "common.hpp" // one for all includes
 #include "CurrentNa.hpp"
 #include "CurrentK.hpp"
+#include "CurrentLeak.hpp"
+#include "CurrentHyperpolar.hpp"
 
 
 // grid parameters
@@ -180,7 +182,7 @@ real h_inf(real V) {
 */
 
 
-void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, real value) {
+void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, real* q, real value) {
     int idx;
     std::srand(unsigned(1.)); // initial seed for random number generator
     real randomNumber;
@@ -204,6 +206,7 @@ void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, 
                 //n[idx] = 0.1;//n_inf_CPU(VRest);
                 h[idx] = 0.1;//h_inf_CPU(VRest);
                 p[idx] = 0.1;
+                q[idx] = 0.1;
             }
             /*else if (idx == idxCenter) { // initial peak
                 // TODO: find out about the values
@@ -221,6 +224,7 @@ void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, 
                 //n[idx] = 0.1;//n_inf_CPU(VRest);
                 h[idx] = 0.1;//h_inf_CPU(VRest);
                 p[idx] = 0.1;
+                q[idx] = 0.1;
             }
 
         }
@@ -272,13 +276,14 @@ real CurrentLeak(real V, real m, real n, real h) {
 }
 */
 #pragma acc routine
-real TotalIonCurrent(real V, real m, /* real n,*/ real h, real p) {
-    real iNa = CurrentNa(V, m, /* n, */ h);
-    real iK = CurrentK(V, p);
-    //real iLeak = CurrentLeak(V, m, n, h);
+real TotalIonCurrent(real V, real m, /* real n,*/ real h, real p, real q) {
+    real INa = CurrentNa(V, m, /* n, */ h);
+    real IK = CurrentK(V, p);
+    real ILeak = CurrentLeak(V);
+    real IHyperpolar = CurrentHyperpolar(V, q);
 
     // TODO: check the sign of the expression below
-    return  -(iNa + iK);// + iLeak);
+    return  -(INa + IK + ILeak + IHyperpolar); // + TODO);
 }
 
 
@@ -301,19 +306,21 @@ int main() {
     //real* nOld = new real[numPointsTotal];
     real* hOld = new real[numPointsTotal];
     real* pOld = new real[numPointsTotal];
+    real* qOld = new real[numPointsTotal];
 
     real* VNew = new real[numPointsTotal];
     real* mNew = new real[numPointsTotal];
     //real* nNew = new real[numPointsTotal];
     real* hNew = new real[numPointsTotal];
-    real* pNew = new real[numPointsTotal]; 
+    real* pNew = new real[numPointsTotal];
+    real* qNew = new real[numPointsTotal]; 
 
     real* tmp; // a pointer for swapping time-layers 'n' and 'n+1'
 
 
     // initializing before timesteppin'
-    SetInitialConditions_CPU(VOld, mOld, /* nOld,*/ hOld, pOld, 0.);
-    SetInitialConditions_CPU(VNew, mNew, /* nNew,*/ hNew, pNew, 0.); // for avoiding "junk" values in all '...New' arrays
+    SetInitialConditions_CPU(VOld, mOld, /* nOld,*/ hOld, pOld, qOld, 0.);
+    SetInitialConditions_CPU(VNew, mNew, /* nNew,*/ hNew, pNew, qNew, 0.); // for avoiding "junk" values in all '...New' arrays
 
     real tCurrent = 0.;
     int stepNumber = 0;
@@ -363,6 +370,8 @@ int main() {
 
                     */
                     ///////////////// gating variables: ode ("reaction") step
+
+                    // TODO: make only ONE read of VOld[idxCenter], etc from memory; to more speedup, esp. for GPU
                     mNew[idxCenter] = m_inf(VOld[idxCenter]) + (mOld[idxCenter] - m_inf(VOld[idxCenter]))
                                                                 * exp(-dt * (alpha_m(VOld[idxCenter]) + beta_m(VOld[idxCenter])));
 
@@ -374,6 +383,9 @@ int main() {
                     
                     pNew[idxCenter] = p_inf(VOld[idxCenter]) + (pOld[idxCenter] - p_inf(VOld[idxCenter]))
                                                                 * exp(-dt * (alpha_p(VOld[idxCenter]) + beta_p(VOld[idxCenter])));
+                   
+                    qNew[idxCenter] = q_inf(VOld[idxCenter]) + (qOld[idxCenter] - q_inf(VOld[idxCenter]))
+                                                                * exp(-dt * (alpha_q(VOld[idxCenter]) + beta_q(VOld[idxCenter])));
 
                     //////////////////
                     // "discrete diffusion" step
@@ -385,7 +397,7 @@ int main() {
                     ); */
                     // reaction step
                     VNew[idxCenter] += dt / Cm * (TotalIonCurrent(VOld[idxCenter], mOld[idxCenter],
-                                                            /*nOld[idxCenter], */ hOld[idxCenter], pOld[idxCenter])
+                                                            /*nOld[idxCenter], */ hOld[idxCenter], pOld[idxCenter], qOld[idxCenter])
                                                                         + I_Stim(i, j,  1e0)); // "standart" I_stim = 1e1;
 
                // } // else
@@ -409,6 +421,8 @@ int main() {
         tmp = hOld; hOld = hNew; hNew = tmp;
         ///// swap p
         tmp = pOld; pOld = pNew; pNew = tmp;
+        ///// swap q
+        tmp = qOld; qOld = qNew; qNew = tmp;
 
 
         if ((stepNumber % (100*5000)) == 0) {
