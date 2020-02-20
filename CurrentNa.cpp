@@ -7,7 +7,7 @@ real alpha_m(real V)
     return (V + 37.) / (1. - exp( -(V + 37.)/10. ));
 }
 
-// TODO: continue from here and do below!
+
 #pragma acc routine
 real beta_m(real V)
 {
@@ -41,7 +41,7 @@ real h_inf(real V)
 
 
 #pragma acc routine
-real CurrentNa(real V, real m, real n, real h)
+real CurrentNa(real V, real m, /* real n,*/ real h)
 {
     //real ENernst = 30.;
     //real gMax = 120.;

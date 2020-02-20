@@ -15,6 +15,7 @@
 
 #include "common.hpp" // one for all includes
 #include "CurrentNa.hpp"
+#include "CurrentK.hpp"
 
 
 // grid parameters
@@ -25,7 +26,7 @@
 #define numPointsTotal (numPointsX * numPointsY)
 #define hx 1. // uncomment if cells are connected // (1./numSegmentsX)
 #define hy 1. // uncomment if cells are connected // (1./numSegmentsY)
-#define T 500. // old val: 500 // endtime
+#define T 4000. // old val: 500 // endtime
 #define dt 1e-4 // timestep
 
 // model parameters
@@ -130,6 +131,7 @@ real h_inf_CPU(real V) {
 
 
 // GPU versions of functions
+/*
 #pragma acc routine
 real alpha_n(real V) {
     return 0.01 * (V + 55.0) / (1.0 - exp(-(V + 55.0) / 10.0));
@@ -144,7 +146,7 @@ real beta_n(real V) {
 real n_inf(real V) {
     return alpha_n(V) / (alpha_n(V) + beta_n(V));
 }
-
+*/
 /*
 #pragma acc routine
 real alpha_m(real V) {
@@ -178,7 +180,7 @@ real h_inf(real V) {
 */
 
 
-void SetInitialConditions_CPU(real* V, real* m, real* n, real* h, real value) {
+void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, real value) {
     int idx;
     std::srand(unsigned(1.)); // initial seed for random number generator
     real randomNumber;
@@ -199,8 +201,9 @@ void SetInitialConditions_CPU(real* V, real* m, real* n, real* h, real value) {
                 // TODO: find out about the values
                 V[idx] = VRest;
                 m[idx] = 0.1;//m_inf_CPU(VRest);
-                n[idx] = 0.1;//n_inf_CPU(VRest);
+                //n[idx] = 0.1;//n_inf_CPU(VRest);
                 h[idx] = 0.1;//h_inf_CPU(VRest);
+                p[idx] = 0.1;
             }
             /*else if (idx == idxCenter) { // initial peak
                 // TODO: find out about the values
@@ -215,8 +218,9 @@ void SetInitialConditions_CPU(real* V, real* m, real* n, real* h, real value) {
                 // TODO: find out about the values
                 V[idx] = VRest;
                 m[idx] = 0.1;//m_inf_CPU(VRest);
-                n[idx] = 0.1;//n_inf_CPU(VRest);
+                //n[idx] = 0.1;//n_inf_CPU(VRest);
                 h[idx] = 0.1;//h_inf_CPU(VRest);
+                p[idx] = 0.1;
             }
 
         }
@@ -268,13 +272,13 @@ real CurrentLeak(real V, real m, real n, real h) {
 }
 */
 #pragma acc routine
-real TotalIonCurrent(real V, real m, real n, real h) {
-    real iNa = CurrentNa(V, m, n, h);
-    //real iK = CurrentK(V, m, n, h);
+real TotalIonCurrent(real V, real m, /* real n,*/ real h, real p) {
+    real iNa = CurrentNa(V, m, /* n, */ h);
+    real iK = CurrentK(V, p);
     //real iLeak = CurrentLeak(V, m, n, h);
 
     // TODO: check the sign of the expression below
-    return  -(iNa);// + iK + iLeak);
+    return  -(iNa + iK);// + iLeak);
 }
 
 
@@ -294,20 +298,22 @@ int main() {
     
     real* VOld = new real[numPointsTotal];
     real* mOld = new real[numPointsTotal];
-    real* nOld = new real[numPointsTotal];
+    //real* nOld = new real[numPointsTotal];
     real* hOld = new real[numPointsTotal];
+    real* pOld = new real[numPointsTotal];
 
     real* VNew = new real[numPointsTotal];
     real* mNew = new real[numPointsTotal];
-    real* nNew = new real[numPointsTotal];
+    //real* nNew = new real[numPointsTotal];
     real* hNew = new real[numPointsTotal];
+    real* pNew = new real[numPointsTotal]; 
 
     real* tmp; // a pointer for swapping time-layers 'n' and 'n+1'
 
 
     // initializing before timesteppin'
-    SetInitialConditions_CPU(VOld, mOld, nOld, hOld, 0.);
-    SetInitialConditions_CPU(VNew, mNew, nNew, hNew, 0.); // for avoiding "junk" values in all '...New' arrays
+    SetInitialConditions_CPU(VOld, mOld, /* nOld,*/ hOld, pOld, 0.);
+    SetInitialConditions_CPU(VNew, mNew, /* nNew,*/ hNew, pNew, 0.); // for avoiding "junk" values in all '...New' arrays
 
     real tCurrent = 0.;
     int stepNumber = 0;
@@ -316,7 +322,7 @@ int main() {
     printf("Timesteppin' begins...\n");
     clock_t start = clock();
 
-
+// pragmas without "-acc" flag --- are ignored?
 #pragma acc data copy(VOld[0:numPointsTotal], mOld[0:numPointsTotal], nOld[0:numPointsTotal], hOld[0:numPointsTotal], \
 		      VNew[0:numPointsTotal], mNew[0:numPointsTotal], nNew[0:numPointsTotal], hNew[0:numPointsTotal]) \
 		      deviceptr(tmp)
@@ -365,7 +371,9 @@ int main() {
 
                     hNew[idxCenter] = h_inf(VOld[idxCenter]) + (hOld[idxCenter] - h_inf(VOld[idxCenter]))
                                                                 * exp(-dt * (alpha_h(VOld[idxCenter]) + beta_h(VOld[idxCenter])));
-
+                    
+                    pNew[idxCenter] = p_inf(VOld[idxCenter]) + (pOld[idxCenter] - p_inf(VOld[idxCenter]))
+                                                                * exp(-dt * (alpha_p(VOld[idxCenter]) + beta_p(VOld[idxCenter])));
 
                     //////////////////
                     // "discrete diffusion" step
@@ -377,8 +385,8 @@ int main() {
                     ); */
                     // reaction step
                     VNew[idxCenter] += dt / Cm * (TotalIonCurrent(VOld[idxCenter], mOld[idxCenter],
-                                                            nOld[idxCenter], hOld[idxCenter])
-                                                                        + I_Stim(i, j, 0. /* 1e1 */));
+                                                            /*nOld[idxCenter], */ hOld[idxCenter], pOld[idxCenter])
+                                                                        + I_Stim(i, j,  1e0)); // "standart" I_stim = 1e1;
 
                // } // else
             } // for
@@ -395,13 +403,15 @@ int main() {
         tmp = VOld; VOld = VNew; VNew = tmp;
         ///// swap m
         tmp = mOld; mOld = mNew; mNew = tmp;
-        ///// swap n
-        tmp = nOld; nOld = nNew; nNew = tmp;
+        // ///// swap n
+        //tmp = nOld; nOld = nNew; nNew = tmp;
         //// swap h
         tmp = hOld; hOld = hNew; hNew = tmp;
+        ///// swap p
+        tmp = pOld; pOld = pNew; pNew = tmp;
 
 
-        if ((stepNumber % 5000) == 0) {
+        if ((stepNumber % (100*5000)) == 0) {
             #pragma acc update host(VOld[0:numPointsTotal]) 
 	    Write2VTK(numPointsX, VOld, hx, counterOutput); // for now: numPointsX == numPointsY
             printf("Step #%d is performed\n", stepNumber);
@@ -416,16 +426,19 @@ int main() {
 
     printf("\nCalculations finished. Elapsed time = %.2e sec\n", ((real)(clock() - start))/CLOCKS_PER_SEC);
 
-    // cleaning up
-    //delete[] VOld;
     
+    // cleaning up
+    delete[] VOld;
     delete[] VNew;
     delete[] mOld;
     delete[] mNew;
-    delete[] nOld;
-    delete[] nNew;
+    //delete[] nOld;
+    //delete[] nNew;
     delete[] hOld;
     delete[] hNew;
+    delete[] pOld;
+    delete[] pNew;
+
 
     return 0;
 }

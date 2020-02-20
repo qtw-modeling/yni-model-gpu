@@ -9,4 +9,4 @@ real beta_h(real V);
 real m_inf(real V);
 real h_inf(real V);
 
-real CurrentNa(real V, real m, real n, real h);
+real CurrentNa(real V, real m, /* real n,*/ real h);
