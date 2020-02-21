@@ -8,6 +8,9 @@
 //#include <cstdlib>
 //#include "openacc.h"
 
+#include <string>
+#include <map>
+
 // 4 C++11 includes
 //#include <vector>
 
@@ -28,7 +31,7 @@
 #define numPointsTotal (numPointsX * numPointsY)
 #define hx 1. // uncomment if cells are connected // (1./numSegmentsX)
 #define hy 1. // uncomment if cells are connected // (1./numSegmentsY)
-#define T 700. // old val: 500 // endtime
+#define T 3000. // old val: 500 // endtime
 #define dt 1e-4 // timestep
 
 // model parameters
@@ -41,10 +44,18 @@
 
 
 
-void Write2VTK(const int n, real* p, const real h, const int step)
+void Write2VTK(std::string fileName, const int n, real* p, const real h, const int step)
 {
-    char fn[256];
-    sprintf(fn, "./output/yni.%d.vtk", step);
+    // C style
+    //char fn[256];
+    //sprintf(fn, "./output/yni.%d.vtk", step);
+
+    // C++ style
+    std::string fn = "./output/" + fileName;
+    char fnEnding[256];
+    sprintf(fnEnding, ".%d.vtk", step);
+    std::string str_fnEnding = fnEnding;
+    fn += str_fnEnding;
 
     std::fstream f(fn, std::ios::out);
     f << "# vtk DataFile Version 3.0" << std::endl;
@@ -200,18 +211,18 @@ real* f, real value) {
             randomNumber =  ((real)(std::rand() % 20))/20.;
 
             // the borders: Dirichlet boundary conditions
-            if (i == 0 || j == 0 || i == (numPointsX - 1) || j == (numPointsY - 1)) {
+            //if (i == 0 || j == 0 || i == (numPointsX - 1) || j == (numPointsY - 1)) {
                 // TODO: find out about the values
                 V[idx] = VRest;
-                m[idx] = 0.5;//m_inf_CPU(VRest); // 0.5
+                m[idx] = 0.067;//m_inf_CPU(VRest); // 0.5
                 //n[idx] = 0.5;//n_inf_CPU(VRest); // 0.5
-                h[idx] = 0.5; //h_inf_CPU(VRest); // 0.5
-                p[idx] = 0.5; 
-                q[idx] = 0.5;
+                h[idx] = 0.999; //h_inf_CPU(VRest); // 0.5
+                p[idx] = 0.;// 0.1; // may be false; TODO perform calcs with higher T 
+                q[idx] = 0.; // may be false; TODO perform calcs with higher T  
 
-                d[idx] = 0.5;
-                f[idx] = 0.5;
-            }
+                d[idx] = 0.; //0.;
+                f[idx] = 1.; //1.;
+            //}
             /*else if (idx == idxCenter) { // initial peak
                 // TODO: find out about the values
                 V[idx] = 0.95; //randomNumber;
@@ -220,7 +231,7 @@ real* f, real value) {
                 h[idx] = 0.;
 
             }*/
-            else {
+            /* else {
                 //randomNumber =  ((real)(std::rand() % 20))/20.;
                 // TODO: find out about the values
                 V[idx] = VRest;
@@ -232,7 +243,7 @@ real* f, real value) {
 
                 d[idx] = 0.5;
                 f[idx] = 0.5;
-            }
+            } */
 
         }
 }
@@ -307,8 +318,7 @@ int main() {
     // C++11 style alloc
     //std::vector<real> vecVOld(numPointsTotal);
     //real* VOld = &vecVOld.front();
-    
-    
+
     real* VOld = new real[numPointsTotal];
     real* mOld = new real[numPointsTotal];
     //real* nOld = new real[numPointsTotal];
@@ -328,6 +338,17 @@ int main() {
     real* fNew = new real[numPointsTotal];
 
     real* tmp; // a pointer for swapping time-layers 'n' and 'n+1'
+
+    // for output in a loop
+    std::map<std::string, real*> variables;
+    variables["V"] = VOld;
+    variables["m"] = mOld;
+    variables["h"] = hOld;
+    variables["p"] = pOld;
+    variables["q"] = qOld;
+    variables["d"] = dOld;
+    variables["f"] = fOld;
+    // = {"V", "m", "h", "p", "q", "d", "f"};
 
 
     // initializing before timesteppin'
@@ -408,25 +429,28 @@ int main() {
 
 
 
+                    /*
+                    // steady state's calculation
+                    VNew[idxCenter] = VRest;
+                    */
 
-
-
-
-
+                    
                     //////////////////
                     // "discrete diffusion" step
                     VNew[idxCenter] = VOld[idxCenter]; // 
-                    /* uncomment if cells are connected; otherwize --- Nans */ 
+                    // uncomment if cells are connected; otherwize --- Nans
                     /* + dt / Cm * (
                             Dx / (hx*hx) * (VOld[idxRight] - 2 * VOld[idxCenter] + VOld[idxLeft])
                             + Dy / (hy*hy) * (VOld[idxUp] - 2 * VOld[idxCenter] + VOld[idxDown])
                     ); */
+                    
+                    
                     // reaction step
                     VNew[idxCenter] += dt / Cm * (TotalIonCurrent(VOld[idxCenter], mOld[idxCenter],
-                                                            /*nOld[idxCenter], */ hOld[idxCenter], pOld[idxCenter], 
+                                                             hOld[idxCenter], pOld[idxCenter], 
                                                             qOld[idxCenter], dOld[idxCenter], fOld[idxCenter])
                                                                         + I_Stim(i, j, 0.*1e0)); // "standart" I_stim = 1e0;
-
+                    
                // } // else
             } // for
 	
@@ -457,11 +481,14 @@ int main() {
 
 
 
-        if ((stepNumber % (5000)) == 0) {
+        if ((stepNumber % (10* 5000)) == 0) {
             #pragma acc update host(VOld[0:numPointsTotal]) 
-	    Write2VTK(numPointsX, VOld, hx, counterOutput); // for now: numPointsX == numPointsY
+	        //for(const auto& variable: variables.first()) {
+                //Write2VTK(variable.first, numPointsX, variable.second, hx, counterOutput); // for now: numPointsX == numPointsY
+                Write2VTK("V", numPointsX, variables["V"], hx, counterOutput); // for now: numPointsX == numPointsY
+            //}
             printf("Step #%d is performed\n", stepNumber);
-	    counterOutput++;
+	        counterOutput++;
         }
 
 

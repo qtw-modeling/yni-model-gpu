@@ -6,4 +6,5 @@
 #include <fstream>
 #include <cstdlib>
 
+
 typedef double real;
