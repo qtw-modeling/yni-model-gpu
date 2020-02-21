@@ -18,7 +18,7 @@
 #include "CurrentK.hpp"
 #include "CurrentLeak.hpp"
 #include "CurrentHyperpolar.hpp"
-
+#include "CurrentSlow.hpp"
 
 // grid parameters
 #define numSegmentsX 0
@@ -28,12 +28,12 @@
 #define numPointsTotal (numPointsX * numPointsY)
 #define hx 1. // uncomment if cells are connected // (1./numSegmentsX)
 #define hy 1. // uncomment if cells are connected // (1./numSegmentsY)
-#define T 4000. // old val: 500 // endtime
+#define T 700. // old val: 500 // endtime
 #define dt 1e-4 // timestep
 
 // model parameters
 #define Cm 1.
-#define VRest (-65.)
+#define VRest (-60.) // NOTE: there exists no resting potential for SA node
 
 // tissue parameters
 #define Dx 1e-3
@@ -182,7 +182,8 @@ real h_inf(real V) {
 */
 
 
-void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, real* q, real value) {
+void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, real* q, real* d, 
+real* f, real value) {
     int idx;
     std::srand(unsigned(1.)); // initial seed for random number generator
     real randomNumber;
@@ -202,11 +203,14 @@ void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, 
             if (i == 0 || j == 0 || i == (numPointsX - 1) || j == (numPointsY - 1)) {
                 // TODO: find out about the values
                 V[idx] = VRest;
-                m[idx] = 0.1;//m_inf_CPU(VRest);
-                //n[idx] = 0.1;//n_inf_CPU(VRest);
-                h[idx] = 0.1;//h_inf_CPU(VRest);
-                p[idx] = 0.1;
-                q[idx] = 0.1;
+                m[idx] = 0.5;//m_inf_CPU(VRest); // 0.5
+                //n[idx] = 0.5;//n_inf_CPU(VRest); // 0.5
+                h[idx] = 0.5; //h_inf_CPU(VRest); // 0.5
+                p[idx] = 0.5; 
+                q[idx] = 0.5;
+
+                d[idx] = 0.5;
+                f[idx] = 0.5;
             }
             /*else if (idx == idxCenter) { // initial peak
                 // TODO: find out about the values
@@ -220,11 +224,14 @@ void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, 
                 //randomNumber =  ((real)(std::rand() % 20))/20.;
                 // TODO: find out about the values
                 V[idx] = VRest;
-                m[idx] = 0.1;//m_inf_CPU(VRest);
-                //n[idx] = 0.1;//n_inf_CPU(VRest);
-                h[idx] = 0.1;//h_inf_CPU(VRest);
-                p[idx] = 0.1;
-                q[idx] = 0.1;
+                m[idx] = 0.5;//m_inf_CPU(VRest);
+                //n[idx] = 0.5;//n_inf_CPU(VRest);
+                h[idx] = 0.5;//h_inf_CPU(VRest);
+                p[idx] = 0.5;
+                q[idx] = 0.5;
+
+                d[idx] = 0.5;
+                f[idx] = 0.5;
             }
 
         }
@@ -276,14 +283,15 @@ real CurrentLeak(real V, real m, real n, real h) {
 }
 */
 #pragma acc routine
-real TotalIonCurrent(real V, real m, /* real n,*/ real h, real p, real q) {
+real TotalIonCurrent(real V, real m, /* real n,*/ real h, real p, real q, real d, real f) {
     real INa = CurrentNa(V, m, /* n, */ h);
     real IK = CurrentK(V, p);
     real ILeak = CurrentLeak(V);
     real IHyperpolar = CurrentHyperpolar(V, q);
+    real ISlow = CurrentSlow(V, d, f);
 
     // TODO: check the sign of the expression below
-    return  -(INa + IK + ILeak + IHyperpolar); // + TODO);
+    return  -(INa + IK + ILeak + IHyperpolar + ISlow);
 }
 
 
@@ -307,20 +315,24 @@ int main() {
     real* hOld = new real[numPointsTotal];
     real* pOld = new real[numPointsTotal];
     real* qOld = new real[numPointsTotal];
+    real* dOld = new real[numPointsTotal];
+    real* fOld = new real[numPointsTotal];
 
     real* VNew = new real[numPointsTotal];
     real* mNew = new real[numPointsTotal];
     //real* nNew = new real[numPointsTotal];
     real* hNew = new real[numPointsTotal];
     real* pNew = new real[numPointsTotal];
-    real* qNew = new real[numPointsTotal]; 
+    real* qNew = new real[numPointsTotal];
+    real* dNew = new real[numPointsTotal];
+    real* fNew = new real[numPointsTotal];
 
     real* tmp; // a pointer for swapping time-layers 'n' and 'n+1'
 
 
     // initializing before timesteppin'
-    SetInitialConditions_CPU(VOld, mOld, /* nOld,*/ hOld, pOld, qOld, 0.);
-    SetInitialConditions_CPU(VNew, mNew, /* nNew,*/ hNew, pNew, qNew, 0.); // for avoiding "junk" values in all '...New' arrays
+    SetInitialConditions_CPU(VOld, mOld, /* nOld,*/ hOld, pOld, qOld, dOld, fOld, 0.);
+    SetInitialConditions_CPU(VNew, mNew, /* nNew,*/ hNew, pNew, qNew, dNew, fNew, 0.); // for avoiding "junk" values in all '...New' arrays
 
     real tCurrent = 0.;
     int stepNumber = 0;
@@ -386,6 +398,20 @@ int main() {
                    
                     qNew[idxCenter] = q_inf(VOld[idxCenter]) + (qOld[idxCenter] - q_inf(VOld[idxCenter]))
                                                                 * exp(-dt * (alpha_q(VOld[idxCenter]) + beta_q(VOld[idxCenter])));
+                    
+
+                    dNew[idxCenter] = d_inf(VOld[idxCenter]) + (dOld[idxCenter] - d_inf(VOld[idxCenter]))
+                                                                * exp(-dt * (alpha_d(VOld[idxCenter]) + beta_d(VOld[idxCenter])));
+                    
+                    fNew[idxCenter] = f_inf(VOld[idxCenter]) + (fOld[idxCenter] - f_inf(VOld[idxCenter]))
+                                                                * exp(-dt * (alpha_f(VOld[idxCenter]) + beta_f(VOld[idxCenter])));
+
+
+
+
+
+
+
 
                     //////////////////
                     // "discrete diffusion" step
@@ -397,8 +423,9 @@ int main() {
                     ); */
                     // reaction step
                     VNew[idxCenter] += dt / Cm * (TotalIonCurrent(VOld[idxCenter], mOld[idxCenter],
-                                                            /*nOld[idxCenter], */ hOld[idxCenter], pOld[idxCenter], qOld[idxCenter])
-                                                                        + I_Stim(i, j,  1e0)); // "standart" I_stim = 1e1;
+                                                            /*nOld[idxCenter], */ hOld[idxCenter], pOld[idxCenter], 
+                                                            qOld[idxCenter], dOld[idxCenter], fOld[idxCenter])
+                                                                        + I_Stim(i, j, 0.*1e0)); // "standart" I_stim = 1e0;
 
                // } // else
             } // for
@@ -423,9 +450,14 @@ int main() {
         tmp = pOld; pOld = pNew; pNew = tmp;
         ///// swap q
         tmp = qOld; qOld = qNew; qNew = tmp;
+        ///// swap d
+        tmp = dOld; dOld = dNew; dNew = tmp;
+        ///// swap f
+        tmp = fOld; fOld = fNew; fNew = tmp;
 
 
-        if ((stepNumber % (100*5000)) == 0) {
+
+        if ((stepNumber % (5000)) == 0) {
             #pragma acc update host(VOld[0:numPointsTotal]) 
 	    Write2VTK(numPointsX, VOld, hx, counterOutput); // for now: numPointsX == numPointsY
             printf("Step #%d is performed\n", stepNumber);
@@ -452,6 +484,12 @@ int main() {
     delete[] hNew;
     delete[] pOld;
     delete[] pNew;
+    delete[] qOld;
+    delete[] qNew;
+    delete[] dOld;
+    delete[] dNew;
+    delete[] fOld;
+    delete[] fNew;
 
 
     return 0;
