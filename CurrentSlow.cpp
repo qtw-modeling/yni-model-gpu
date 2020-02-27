@@ -23,7 +23,7 @@ real alpha_f(real V)
 
 real beta_f(real V)
 {
-    //return ( 9.44 * 1e-4 * fabs(V + 60.) ) / ( 1. + exp(-(V + 29.5)/4.16) ); // as in the YNI-article
+    //return ( 9.44 * 1e-4 * fabs(V + 60.) ) / ( 1. + exp(-(V + 29.5)/4.16) ); // TODO: check: "fabs" --- as in the YNI-article (or a typo?)
     return ( 9.44 * 1e-4 * (V + 60.) ) / ( 1. + exp(-(V + 29.5)/4.16) );
 }
 

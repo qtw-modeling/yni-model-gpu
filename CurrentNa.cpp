@@ -16,7 +16,7 @@ real beta_m(real V)
 
 real alpha_h(real V)
 {
-    return 1.209 * 1e-3 * exp( (-V + 20.)/6.534);
+    return 1.209 * 1e-3 * exp( -(V + 20.)/6.534);
 }
 
 

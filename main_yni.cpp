@@ -31,8 +31,8 @@
 #define numPointsTotal (numPointsX * numPointsY)
 #define hx 1. // uncomment if cells are connected // (1./numSegmentsX)
 #define hy 1. // uncomment if cells are connected // (1./numSegmentsY)
-#define T 3000. // old val: 500 // endtime
-#define dt 1e-4 // timestep
+#define T 1000. // old val: 500 // endtime (in ms)
+#define dt 0.005 // old val = 1e-4 // timestep (in ms)
 
 // model parameters
 #define Cm 1.
@@ -294,15 +294,16 @@ real CurrentLeak(real V, real m, real n, real h) {
 }
 */
 #pragma acc routine
-real TotalIonCurrent(real V, real m, /* real n,*/ real h, real p, real q, real d, real f) {
-    real INa = CurrentNa(V, m, /* n, */ h);
-    real IK = CurrentK(V, p);
-    real ILeak = CurrentLeak(V);
-    real IHyperpolar = CurrentHyperpolar(V, q);
-    real ISlow = CurrentSlow(V, d, f);
+real TotalIonCurrent(int idx, real V, real m, /* real n,*/ real h, real p, real q, real d, real f,
+real* INa, real* IK, real* ILeak, real* IHyperpolar, real* ISlow) {
+    INa[idx] = CurrentNa(V, m, /* n, */ h);
+    IK[idx] = CurrentK(V, p);
+    ILeak[idx] = CurrentLeak(V);
+    IHyperpolar[idx] = CurrentHyperpolar(V, q);
+    ISlow[idx] = CurrentSlow(V, d, f);
 
     // TODO: check the sign of the expression below
-    return  -(INa + IK + ILeak + IHyperpolar + ISlow);
+    return  -(INa[idx] + IK[idx] + ILeak[idx] + IHyperpolar[idx] + ISlow[idx]);
 }
 
 
@@ -319,6 +320,7 @@ int main() {
     //std::vector<real> vecVOld(numPointsTotal);
     //real* VOld = &vecVOld.front();
 
+    // gating vars
     real* VOld = new real[numPointsTotal];
     real* mOld = new real[numPointsTotal];
     //real* nOld = new real[numPointsTotal];
@@ -337,6 +339,19 @@ int main() {
     real* dNew = new real[numPointsTotal];
     real* fNew = new real[numPointsTotal];
 
+    // currents
+    real* INaOld = new real[numPointsTotal];
+    real* IKOld = new real[numPointsTotal];
+    real* ILeakOld = new real[numPointsTotal];
+    real* IHyperpolarOld = new real[numPointsTotal];
+    real* ISlowOld = new real[numPointsTotal];
+
+    real* INaNew = new real[numPointsTotal];
+    real* IKNew = new real[numPointsTotal];
+    real* ILeakNew = new real[numPointsTotal];
+    real* IHyperpolarNew = new real[numPointsTotal];
+    real* ISlowNew = new real[numPointsTotal];
+
     real* tmp; // a pointer for swapping time-layers 'n' and 'n+1'
 
     // for output in a loop
@@ -348,6 +363,11 @@ int main() {
     variables["q"] = qOld;
     variables["d"] = dOld;
     variables["f"] = fOld;
+    variables["INa"] = INaOld;
+    variables["IK"] = IKOld;
+    variables["ILeak"] = ILeakOld;
+    variables["IHyperpolar"] = IHyperpolarOld;
+    variables["ISlow"] = ISlowOld;
     // = {"V", "m", "h", "p", "q", "d", "f"};
 
 
@@ -426,11 +446,8 @@ int main() {
                     
                     fNew[idxCenter] = f_inf(VOld[idxCenter]) + (fOld[idxCenter] - f_inf(VOld[idxCenter]))
                                                                 * exp(-dt * (alpha_f(VOld[idxCenter]) + beta_f(VOld[idxCenter])));
-
-
-
                     /*
-                    // steady state's calculation
+                    // for steady state's calculation
                     VNew[idxCenter] = VRest;
                     */
 
@@ -446,9 +463,10 @@ int main() {
                     
                     
                     // reaction step
-                    VNew[idxCenter] += dt / Cm * (TotalIonCurrent(VOld[idxCenter], mOld[idxCenter],
+                    VNew[idxCenter] += dt / Cm * (TotalIonCurrent(idxCenter, VOld[idxCenter], mOld[idxCenter],
                                                              hOld[idxCenter], pOld[idxCenter], 
-                                                            qOld[idxCenter], dOld[idxCenter], fOld[idxCenter])
+                                                            qOld[idxCenter], dOld[idxCenter], fOld[idxCenter],
+                                                            INaOld, IKOld, ILeakOld, IHyperpolarOld, ISlowOld)
                                                                         + I_Stim(i, j, 0.*1e0)); // "standart" I_stim = 1e0;
                     
                // } // else
@@ -456,6 +474,17 @@ int main() {
 	
 	} // acc kernels
 
+        if ((stepNumber % (500)) == 0) {
+            #pragma acc update host(VOld[0:numPointsTotal]) 
+	        for(const auto& variable: variables) {// variables repr "X"Old values
+                int outNumber = stepNumber*dt;
+                Write2VTK(variable.first, numPointsX, variable.second, hx, stepNumber); // for now: numPointsX == numPointsY
+                //Write2VTK("V", numPointsX, variables["V"], hx, counterOutput); // for now: numPointsX == numPointsY
+            }
+            printf("Step #%d is performed\n", stepNumber);
+	        counterOutput++;
+        }
+        
         tCurrent += dt;
         stepNumber += 1;
 
@@ -478,18 +507,27 @@ int main() {
         tmp = dOld; dOld = dNew; dNew = tmp;
         ///// swap f
         tmp = fOld; fOld = fNew; fNew = tmp;
-
-
-
-        if ((stepNumber % (10* 5000)) == 0) {
+        /*
+        ///// swap INa
+        tmp = INaOld; INaOld = INaNew; INaNew = tmp;
+        ///// swap IK
+        tmp = IKOld; IKOld = IKNew; IKNew = tmp;
+        ///// swap ILeak
+        tmp = ILeakOld; ILeakOld = ILeakNew; ILeakNew = tmp;
+        ///// swap IHyperpolar
+        tmp = IHyperpolarOld; IHyperpolarOld = IHyperpolarNew; IHyperpolarNew = tmp;
+        ///// swap ISlow
+        tmp = ISlowOld; ISlowOld = ISlowNew; ISlowNew = tmp;
+        */
+        /* ((stepNumber % (10* 5000)) == 0) {
             #pragma acc update host(VOld[0:numPointsTotal]) 
-	        //for(const auto& variable: variables.first()) {
-                //Write2VTK(variable.first, numPointsX, variable.second, hx, counterOutput); // for now: numPointsX == numPointsY
-                Write2VTK("V", numPointsX, variables["V"], hx, counterOutput); // for now: numPointsX == numPointsY
-            //}
+	        for(const auto& variable: variables) {
+                Write2VTK(variable.first, numPointsX, variable.second, hx, counterOutput); // for now: numPointsX == numPointsY
+                //Write2VTK("V", numPointsX, variables["V"], hx, counterOutput); // for now: numPointsX == numPointsY
+            }
             printf("Step #%d is performed\n", stepNumber);
 	        counterOutput++;
-        }
+        }*/
 
 
     } // while (tCurrent < T)
