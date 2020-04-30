@@ -5,6 +5,6 @@
 #include <time.h>
 #include <fstream>
 #include <cstdlib>
-
+#include <iostream>
 
 typedef double real;

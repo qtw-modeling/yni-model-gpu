@@ -8,14 +8,17 @@
 //#include <cstdlib>
 //#include "openacc.h"
 
+
 #include <string>
 #include <map>
+#include <cmath>
+#include <math.h> // 4some specific constants
 
 // 4 C++11 includes
 //#include <vector>
 
 //typedef double real;
-
+#include "state.hpp"
 #include "common.hpp" // one for all includes
 #include "CurrentNa.hpp"
 #include "CurrentK.hpp"
@@ -24,14 +27,14 @@
 #include "CurrentSlow.hpp"
 
 // grid parameters
-#define numSegmentsX 0
-#define numSegmentsY 0
-#define numPointsX (numSegmentsX + 1)
-#define numPointsY (numSegmentsY + 1)
+#define numSegmentsX 20 //10
+#define numSegmentsY 20 //10
+#define numPointsX (numSegmentsX + 1) // = numCells
+#define numPointsY (numSegmentsY + 1) // = numCells
 #define numPointsTotal (numPointsX * numPointsY)
-#define hx 1. // uncomment if cells are connected // (1./numSegmentsX)
-#define hy 1. // uncomment if cells are connected // (1./numSegmentsY)
-#define T 1000. // old val: 500 // endtime (in ms)
+#define hx 0.07 //1. // uncomment if cells are connected // (1./numSegmentsX)
+#define hy 0.07 //1. // uncomment if cells are connected // (1./numSegmentsY)
+#define T (5*1000.) // old val: 500 // endtime (in ms)
 #define dt 0.005 // old val = 1e-4 // timestep (in ms)
 
 // model parameters
@@ -39,8 +42,8 @@
 #define VRest (-60.) // NOTE: there exists no resting potential for SA node
 
 // tissue parameters
-#define Dx 1e-3
-#define Dy 1e-3
+#define Dx 1e-3 //1e-3 // conductivity
+#define Dy 1e-3 //1e-3 // conductivity
 
 
 
@@ -192,6 +195,225 @@ real h_inf(real V) {
 }
 */
 
+#pragma acc routine
+real I_Stim(int i, int j, real value)
+{
+    //int x0 = (int)((real)numSegmentsX /2.); int y0 = (int)((real)numSegmentsY /2.); // tmp values
+
+    /* uncomment if cells are connected
+    if ((i > 1 && i < numPointsX - 2) && (j == 2))
+        return value;
+    else
+        return 0.;
+    */
+
+    return value;
+}
+
+#pragma acc routine
+real TotalIonCurrent(int idx, real V, real m, /* real n,*/ real h, real p, real q, real d, real f,
+                     real *INa, real *IK, real *ILeak, real *IHyperpolar, real *ISlow)
+{
+    INa[idx] = CurrentNa(V, m, h);
+    IK[idx] = CurrentK(V, p);
+    ILeak[idx] = CurrentLeak(V);
+    IHyperpolar[idx] = CurrentHyperpolar(V, q);
+    ISlow[idx] = CurrentSlow(V, d, f);
+
+    // TODO: check the sign of the expression below
+    return -(INa[idx] + IK[idx] + ILeak[idx] + IHyperpolar[idx] + ISlow[idx]);
+}
+
+real TimeViaPhase(real phase, real Period, real t0) 
+{
+    /* phi = phase; Period = T; t0 = time of first depolarization. */
+    
+    return t0 + (Period / 2*M_PI) * phase;
+    
+}
+
+// phase calculations
+real VviaPhase(real phase) 
+{
+    // we dont need to perform memalloc for members within these structs
+    State* Old = new State;
+    State* New = new State;
+    // initial conditions: only for Old structs: New will be calculated in the loop
+    Old->V = VRest;
+    Old->m = 0.067;                //m_inf_CPU(VRest); // 0.5
+    Old->h = 0.999; //h_inf_CPU(VRest); // 0.5
+    Old->p = 0.;    // 0.1; // may be false; TODO perform calcs with higher T
+    Old->q = 0.;    // may be false; TODO perform calcs with higher T
+    Old->d = 0.; //0.;
+    Old->f = 1.; //1.;
+
+
+    // ...but here --- YES
+    Currents* CurrentsOld = new Currents;
+    
+    // ??? maybe we dont need CurrentsNew??? we are not swapping OLD and NEW
+    Currents* CurrentsNew = new Currents;
+    // dont forget to memalloc pointers within Currents struct;
+    // we use only single cell
+    CurrentsOld->INa = new real[1];
+    CurrentsOld->IK = new real[1];
+    CurrentsOld->ILeak = new real[1];
+    CurrentsOld->IHyperpolar = new real[1];
+    CurrentsOld->ISlow = new real[1];
+    // ...same for "New" struct here
+    CurrentsNew->INa = new real[1];
+    CurrentsNew->IK = new real[1];
+    CurrentsNew->ILeak = new real[1];
+    CurrentsNew->IHyperpolar = new real[1];
+    CurrentsNew->ISlow = new real[1];
+
+    real THRESHOLD = -30; // hardcoded for now
+    real time0 = 10; // random value
+    real time1 = 5; // random value
+    bool isThresholdFound = false;
+
+    real tCurrent = 0;
+    int counter = 0;
+    // TODO:
+    // main loop: timestepping
+    while (1)
+    {
+        
+        /* // when threshold time (t0) is found: set t0
+        if (((New->V > THRESHOLD) && (Old->V < THRESHOLD)) && (isThresholdFound == false))
+        {
+                t0 = tCurrent; // nearest-neighbour interpolaion; change to linear!
+                isThresholdFound = true;
+                //return ; // phase(V)
+        }
+
+        // when 2nd threshold time (t1) is found: set t1 and then exit the loop
+        if (((New->V > THRESHOLD) && (Old->V < THRESHOLD)) && (isThresholdFound == true))
+        {
+            t1 = tCurrent; // nearest-neighbour interpolaion; change to linear!
+            break ; // phase(V)
+        }
+        */
+
+
+        ///////////////// gating variables: ode ("reaction") step
+        // TODO: make only ONE read of Old->V, etc. from memory; to more speedup, esp. for GPU
+        New->m = m_inf(Old->V) + (Old->m - m_inf(Old->V)) * exp(-dt * (alpha_m(Old->V) + beta_m(Old->V)));
+
+                    
+        New->h = h_inf(Old->V) + (Old->h - h_inf(Old->V)) * exp(-dt * (alpha_h(Old->V) + beta_h(Old->V)));
+
+        New->p = p_inf(Old->V) + (Old->p - p_inf(Old->V)) * exp(-dt * (alpha_p(Old->V) + beta_p(Old->V)));
+
+        New->q = q_inf(Old->V) + (Old->q - q_inf(Old->V)) * exp(-dt * (alpha_q(Old->V) + beta_q(Old->V)));
+
+        New->d = d_inf(Old->V) + (Old->d - d_inf(Old->V)) * exp(-dt * (alpha_d(Old->V) + beta_d(Old->V)));
+
+        New->f = f_inf(Old->V) + (Old->f - f_inf(Old->V)) * exp(-dt * (alpha_f(Old->V) + beta_f(Old->V)));
+                  
+        // membrane potential calc                  
+        New->V = Old->V + dt / Cm * ( TotalIonCurrent(0 /* 0 --- index, stands for the single cell model */ , 
+                                 Old->V, Old->m, Old->h, Old->p, Old->q, Old->d, Old->f,
+                                 (CurrentsOld->INa), (CurrentsOld->IK), (CurrentsOld->ILeak), 
+                                 (CurrentsOld->IHyperpolar), 
+                                 (CurrentsOld->ISlow))
+                                 + I_Stim(0, 0, 0.*1e0) ); // "standart" I_stim = 1e
+
+        // when 2nd threshold time (t1) is found: set t1 and then exit the loop
+        if (((New->V > THRESHOLD) && (Old->V < THRESHOLD)) && (isThresholdFound == true))
+        {
+            time1 = tCurrent; // nearest-neighbour interpolaion; change to linear!
+            break;            // phase(V)
+        }
+
+        // when threshold time (t0) is found: set t0
+        if (((New->V > THRESHOLD) && (Old->V < THRESHOLD)) && (isThresholdFound == false))
+        {
+            time0 = tCurrent; // nearest-neighbour interpolaion; change to linear!
+            isThresholdFound = true;
+            //return ; // phase(V)
+        }
+
+        
+        tCurrent += dt;
+        counter += 1;
+
+        // swapping time layers
+        State* tmp;
+        tmp = Old; Old = New; New = tmp;
+
+        //printf("Iteration #%d\n", counter);
+
+    } // while
+
+
+    // set vars, calculated within the loop
+    real period = time1 - time0; // period of oscillations
+    //printf("First loop is finished; period of oscillations: %.2f ms\n", period);
+    // repeat the loop (calculations) again and find V(phi)
+    tCurrent = 0; // again
+    
+    real tOfPhase = TimeViaPhase(phase, period, time0);
+    real VOfPhase; // to be determined in the loop below
+
+    // (again) initial conditions: only for Old structs: New will be calculated in the loop
+    Old->V = VRest;
+    Old->m = 0.067; //m_inf_CPU(VRest); // 0.5
+    Old->h = 0.999; //h_inf_CPU(VRest); // 0.5
+    Old->p = 0.;    // 0.1; // may be false; TODO perform calcs with higher T
+    Old->q = 0.;    // may be false; TODO perform calcs with higher T
+    Old->d = 0.;    //0.;
+    Old->f = 1.;    //1.;
+
+    // (again): main loop: timestepping
+    while (1)
+    {
+        // it means, dat we found the moment of time, corresponding to the phase value
+        if (tCurrent >= tOfPhase)
+        {    
+            VOfPhase = Old->V; // nearest-neighbour iterpolation; change to linear!
+            break;
+            //return VOfPhase;
+        }
+
+        ///////////////// gating variables: ode ("reaction") step
+        // TODO: make only ONE read of Old->V, etc. from memory; to more speedup, esp. for GPU
+        New->m = m_inf(Old->V) + (Old->m - m_inf(Old->V)) * exp(-dt * (alpha_m(Old->V) + beta_m(Old->V)));
+
+        New->h = h_inf(Old->V) + (Old->h - h_inf(Old->V)) * exp(-dt * (alpha_h(Old->V) + beta_h(Old->V)));
+
+        New->p = p_inf(Old->V) + (Old->p - p_inf(Old->V)) * exp(-dt * (alpha_p(Old->V) + beta_p(Old->V)));
+
+        New->q = q_inf(Old->V) + (Old->q - q_inf(Old->V)) * exp(-dt * (alpha_q(Old->V) + beta_q(Old->V)));
+
+        New->d = d_inf(Old->V) + (Old->d - d_inf(Old->V)) * exp(-dt * (alpha_d(Old->V) + beta_d(Old->V)));
+
+        New->f = f_inf(Old->V) + (Old->f - f_inf(Old->V)) * exp(-dt * (alpha_f(Old->V) + beta_f(Old->V)));
+
+        // membrane potential calc
+        New->V = Old->V + dt / Cm * ( TotalIonCurrent(0 /* 0 --- index, stands for the single cell model */ , 
+                                 Old->V, Old->m, Old->h, Old->p, Old->q, Old->d, Old->f,
+                                 (CurrentsOld->INa), (CurrentsOld->IK), (CurrentsOld->ILeak), 
+                                 (CurrentsOld->IHyperpolar), 
+                                 (CurrentsOld->ISlow)) 
+                                 + I_Stim(0, 0, 0. * 1e0) ); // "standart" I_stim = 1e
+
+
+        tCurrent += dt;
+        //stepNumber += 1;
+
+        // swapping time layers
+        State* tmp;
+        tmp = Old; Old = New; New = tmp;
+
+    } // while
+
+    //printf("Second loop is finished; VOfPhase: %.1f mV\n", VOfPhase);
+    //std::cin.get();
+    // "return" --- is within the loop (look up)
+    return VOfPhase;
+}
+
 
 void SetInitialConditions_CPU(real* V, real* m, /* real* n,*/ real* h, real* p, real* q, real* d, 
 real* f, real value) {
@@ -208,12 +430,33 @@ real* f, real value) {
         for (int i = 0; i < numPointsX; i++) {
 
             idx = CalculateLinearCoordinate_CPU(i, j);
-            randomNumber =  ((real)(std::rand() % 20))/20.;
+            randomNumber =  ((real)(std::rand() % 20))/20.; // 4phase setting
 
             // the borders: Dirichlet boundary conditions
             //if (i == 0 || j == 0 || i == (numPointsX - 1) || j == (numPointsY - 1)) {
                 // TODO: find out about the values
-                V[idx] = VRest;
+                
+                // TODO: wrong formulas below ////////////////////////////////////////////////////
+                //int jTilde = numPointsY/2 - j; // j = j^{star}; jTilde = jTilde_{star}
+                //int iTilde = i - (numPointsX/2); // i = i^{star}; iTilde = iTilde_{star}
+
+                real LTotal = numPointsX*hx; // should = numPointsY*hy
+                real L = LTotal/2. - (j*hx + hx/2.);
+                real lsmall = LTotal/2. - ( (numPointsX - 1 - i)*hx + hx/2.);
+
+                real phase = atan2(L, lsmall); // = angle in polar coords; use atan2() func instead of atan() !
+                
+                // check sign: atan2() returns vals. from [-pi, pi]
+                if (phase < 0)
+                {
+                    phase = 2*M_PI + phase;
+                }
+
+                //printf("Phase = %.2f deg.\n", phase*180/M_PI);
+                //std::cin.get();
+                // TODO //////////////////////////////////////////////////////////////
+
+                V[idx] = VviaPhase(phase); //M_PI/12. //VRest;
                 m[idx] = 0.067;//m_inf_CPU(VRest); // 0.5
                 //n[idx] = 0.5;//n_inf_CPU(VRest); // 0.5
                 h[idx] = 0.999; //h_inf_CPU(VRest); // 0.5
@@ -249,19 +492,20 @@ real* f, real value) {
 }
 
 
+/*
 #pragma acc routine
 real I_Stim(int i, int j, real value) {
     //int x0 = (int)((real)numSegmentsX /2.); int y0 = (int)((real)numSegmentsY /2.); // tmp values
 
-    /* uncomment if cells are connected
-    if ((i > 1 && i < numPointsX - 2) && (j == 2))
-        return value;
-    else
-        return 0.;
-    */
+    // // uncomment if cells are connected
+    //if ((i > 1 && i < numPointsX - 2) && (j == 2))
+    //  return value;
+    //else
+    //    return 0.;
+    ///
 
    return value;
-}
+} */
 
 
 // ion currents
@@ -293,10 +537,12 @@ real CurrentLeak(real V, real m, real n, real h) {
     return gMax*(V - ENernst);
 }
 */
+
+/*
 #pragma acc routine
-real TotalIonCurrent(int idx, real V, real m, /* real n,*/ real h, real p, real q, real d, real f,
+real TotalIonCurrent(int idx, real V, real m, real h, real p, real q, real d, real f,
 real* INa, real* IK, real* ILeak, real* IHyperpolar, real* ISlow) {
-    INa[idx] = CurrentNa(V, m, /* n, */ h);
+    INa[idx] = CurrentNa(V, m, h);
     IK[idx] = CurrentK(V, p);
     ILeak[idx] = CurrentLeak(V);
     IHyperpolar[idx] = CurrentHyperpolar(V, q);
@@ -305,7 +551,7 @@ real* INa, real* IK, real* ILeak, real* IHyperpolar, real* ISlow) {
     // TODO: check the sign of the expression below
     return  -(INa[idx] + IK[idx] + ILeak[idx] + IHyperpolar[idx] + ISlow[idx]);
 }
-
+*/
 
 
 
@@ -373,7 +619,7 @@ int main() {
 
     // initializing before timesteppin'
     SetInitialConditions_CPU(VOld, mOld, /* nOld,*/ hOld, pOld, qOld, dOld, fOld, 0.);
-    SetInitialConditions_CPU(VNew, mNew, /* nNew,*/ hNew, pNew, qNew, dNew, fNew, 0.); // for avoiding "junk" values in all '...New' arrays
+    //SetInitialConditions_CPU(VNew, mNew, /* nNew,*/ hNew, pNew, qNew, dNew, fNew, 0.); // for avoiding "junk" values in all '...New' arrays
 
     real tCurrent = 0.;
     int stepNumber = 0;
@@ -388,7 +634,8 @@ int main() {
 		      deviceptr(tmp)
 {
     // main loop: timestepping
-    while (tCurrent < T) {
+    while (tCurrent < T) 
+    {
 
         // TODO: change order of indexing (i, j)
         
@@ -399,29 +646,32 @@ int main() {
 	
 	#pragma acc loop collapse(2) independent
 	for (int j = 0; j < numPointsY; j++)
-            for (int i = 0; i < numPointsX; i++) {
+            for (int i = 0; i < numPointsX; i++) 
+            {
 
                 int idxCenter = CalculateLinearCoordinate(i, j);
                 
-                /*
+                
                 // uncommnent
                 // the borders: Dirichlet boundary conditions
-                if (i == 0 || j == 0 || i == (numPointsX - 1) || j == (numPointsY - 1)) {
+                if (i == 0 || j == 0 || i == (numPointsX - 1) || j == (numPointsY - 1)) 
+                {
                     VNew[idxCenter] = VOld[idxCenter];
                     mNew[idxCenter] = mOld[idxCenter];
-                    nNew[idxCenter] = nOld[idxCenter];
+                    //nNew[idxCenter] = nOld[idxCenter];
                     hNew[idxCenter] = hOld[idxCenter];
                 }
-                */
+                
 
-                /* else {
+                else 
+                {
                     // for short names
                     int idxUp = CalculateLinearCoordinate(i, j + 1);
                     int idxDown = CalculateLinearCoordinate(i, j - 1);
                     int idxLeft = CalculateLinearCoordinate(i - 1, j);
                     int idxRight = CalculateLinearCoordinate(i + 1, j);
 
-                    */
+                    
                     ///////////////// gating variables: ode ("reaction") step
 
                     // TODO: make only ONE read of VOld[idxCenter], etc from memory; to more speedup, esp. for GPU
@@ -446,6 +696,7 @@ int main() {
                     
                     fNew[idxCenter] = f_inf(VOld[idxCenter]) + (fOld[idxCenter] - f_inf(VOld[idxCenter]))
                                                                 * exp(-dt * (alpha_f(VOld[idxCenter]) + beta_f(VOld[idxCenter])));
+                   
                     /*
                     // for steady state's calculation
                     VNew[idxCenter] = VRest;
@@ -454,12 +705,12 @@ int main() {
                     
                     //////////////////
                     // "discrete diffusion" step
-                    VNew[idxCenter] = VOld[idxCenter]; // 
+                    VNew[idxCenter] = VOld[idxCenter]
                     // uncomment if cells are connected; otherwize --- Nans
-                    /* + dt / Cm * (
-                            Dx / (hx*hx) * (VOld[idxRight] - 2 * VOld[idxCenter] + VOld[idxLeft])
-                            + Dy / (hy*hy) * (VOld[idxUp] - 2 * VOld[idxCenter] + VOld[idxDown])
-                    ); */
+                     + dt / Cm * (
+                            Dx  * (VOld[idxRight] - 2 * VOld[idxCenter] + VOld[idxLeft])
+                            + Dy  * (VOld[idxUp] - 2 * VOld[idxCenter] + VOld[idxDown])
+                    );
                     
                     
                     // reaction step
@@ -469,7 +720,7 @@ int main() {
                                                             INaOld, IKOld, ILeakOld, IHyperpolarOld, ISlowOld)
                                                                         + I_Stim(i, j, 0.*1e0)); // "standart" I_stim = 1e0;
                     
-               // } // else
+               } // else
             } // for
 	
 	} // acc kernels
@@ -478,10 +729,10 @@ int main() {
             #pragma acc update host(VOld[0:numPointsTotal]) 
 	        for(const auto& variable: variables) {// variables repr "X"Old values
                 int outNumber = stepNumber*dt;
-                Write2VTK(variable.first, numPointsX, variable.second, hx, stepNumber); // for now: numPointsX == numPointsY
+                Write2VTK(variable.first, numPointsX, variable.second, hx, outNumber); // for now: numPointsX == numPointsY
                 //Write2VTK("V", numPointsX, variables["V"], hx, counterOutput); // for now: numPointsX == numPointsY
             }
-            printf("Step #%d is performed\n", stepNumber);
+            printf("Time: %.2f completed\n", stepNumber*dt);
 	        counterOutput++;
         }
         
