@@ -27,14 +27,14 @@
 #include "CurrentSlow.hpp"
 
 // grid parameters
-#define numSegmentsX 20 //10
-#define numSegmentsY 20 //10
+#define numSegmentsX 10 //10
+#define numSegmentsY 10 //10
 #define numPointsX (numSegmentsX + 1) // = numCells
 #define numPointsY (numSegmentsY + 1) // = numCells
 #define numPointsTotal (numPointsX * numPointsY)
 #define hx 0.07 //1. // uncomment if cells are connected // (1./numSegmentsX)
 #define hy 0.07 //1. // uncomment if cells are connected // (1./numSegmentsY)
-#define T (5*1000.) // old val: 500 // endtime (in ms)
+#define T 2000. //(1000.) // old val: 500 // endtime (in ms)
 #define dt 0.005 // old val = 1e-4 // timestep (in ms)
 
 // model parameters
@@ -42,8 +42,8 @@
 #define VRest (-60.) // NOTE: there exists no resting potential for SA node
 
 // tissue parameters
-#define Dx 1e-3 //1e-3 // conductivity
-#define Dy 1e-3 //1e-3 // conductivity
+#define Dx 0. //88e-3 //1e-3 //1e-3 // conductivity
+#define Dy 0. //88e-3 //1e-3 //1e-3 // conductivity
 
 
 
@@ -422,14 +422,14 @@ real* f, real value) {
     real randomNumber;
 
     // single initial peak
-    int iCenter = (int)((real)numSegmentsX /2.);
-    int jCenter = (int)((real)numSegmentsY /2.); // tmp values
-    int idxCenter = CalculateLinearCoordinate_CPU(iCenter, jCenter);
+    //int iCenter = (int)((real)numSegmentsX /2.);
+    //int jCenter = (int)((real)numSegmentsY /2.); // tmp values
+    //int idxCenter = CalculateLinearCoordinate_CPU(iCenter, jCenter);
 
     for (int j = 0; j < numPointsY; j++)
         for (int i = 0; i < numPointsX; i++) {
 
-            idx = CalculateLinearCoordinate_CPU(i, j);
+            int idxCenter = CalculateLinearCoordinate_CPU(i, j);
             randomNumber =  ((real)(std::rand() % 20))/20.; // 4phase setting
 
             // the borders: Dirichlet boundary conditions
@@ -440,54 +440,67 @@ real* f, real value) {
                 //int jTilde = numPointsY/2 - j; // j = j^{star}; jTilde = jTilde_{star}
                 //int iTilde = i - (numPointsX/2); // i = i^{star}; iTilde = iTilde_{star}
 
+                // for phase calculation: using angle in polar coords
                 real LTotal = numPointsX*hx; // should = numPointsY*hy
-                real L = LTotal/2. - (j*hx + hx/2.);
+                real L = (j*hy + hy/2.) - (numPointsY*hy/2.); // LTotal/2. - (j*hx + hx/2.) --- old formula, when j-order was incorrect
                 real lsmall = LTotal/2. - ( (numPointsX - 1 - i)*hx + hx/2.);
 
                 real phase = atan2(L, lsmall); // = angle in polar coords; use atan2() func instead of atan() !
                 
                 // check sign: atan2() returns vals. from [-pi, pi]
+                
                 if (phase < 0)
                 {
-                    phase = 2*M_PI + phase;
+                    phase += 2*M_PI;
                 }
+                
 
+                //real phaseShifted = phase - M_PI/2.; // phase from R.Syunyaev article
+                
                 //printf("Phase = %.2f deg.\n", phase*180/M_PI);
                 //std::cin.get();
                 // TODO //////////////////////////////////////////////////////////////
 
-                V[idx] = VviaPhase(phase); //M_PI/12. //VRest;
-                m[idx] = 0.067;//m_inf_CPU(VRest); // 0.5
-                //n[idx] = 0.5;//n_inf_CPU(VRest); // 0.5
-                h[idx] = 0.999; //h_inf_CPU(VRest); // 0.5
-                p[idx] = 0.;// 0.1; // may be false; TODO perform calcs with higher T 
-                q[idx] = 0.; // may be false; TODO perform calcs with higher T  
+                V[idxCenter] = VviaPhase(phase); //M_PI/12. //VRest;
+                m[idxCenter] = 0.067;//m_inf_CPU(VRest); // 0.5
+                h[idxCenter] = 0.999; //h_inf_CPU(VRest); // 0.5
+                p[idxCenter] = 0.;// 0.1; // may be false; TODO perform calcs with higher T 
+                q[idxCenter] = 0.; // may be false; TODO perform calcs with higher T  
 
-                d[idx] = 0.; //0.;
-                f[idx] = 1.; //1.;
-            //}
-            /*else if (idx == idxCenter) { // initial peak
-                // TODO: find out about the values
-                V[idx] = 0.95; //randomNumber;
-                m[idx] = 0.5; //randomNumber;
-                n[idx] = 0.;
-                h[idx] = 0.;
+                d[idxCenter] = 0.; //0.;
+                f[idxCenter] = 1.; //1.;
+            }
 
-            }*/
-            /* else {
-                //randomNumber =  ((real)(std::rand() % 20))/20.;
-                // TODO: find out about the values
-                V[idx] = VRest;
-                m[idx] = 0.5;//m_inf_CPU(VRest);
-                //n[idx] = 0.5;//n_inf_CPU(VRest);
-                h[idx] = 0.5;//h_inf_CPU(VRest);
-                p[idx] = 0.5;
-                q[idx] = 0.5;
+    // after filling the whole area: "fill" borders wiht Neumann boundary cond.
+    // the borders: Neumann boundary conditions
+    for (int j = 0; j < numPointsY; j++)
+        for (int i = 0; i < numPointsX; i++)
+        {
+            int idxCenter = CalculateLinearCoordinate_CPU(i, j);
+            
+            // borrder cells, including corner cells
+            if (i == 0 || j == 0 || i == (numSegmentsX) || j == (numSegmentsY))
+            {
+                int idxNear;
 
-                d[idx] = 0.5;
-                f[idx] = 0.5;
-            } */
+                if ((i == 0)) //&& (j >= 1) && (j <= numSegmentsY - 1)) // left border, except for corner cells
+                    idxNear = CalculateLinearCoordinate_CPU(i + 1, j);
+                if ((j == 0)) //&& (i >= 1) && (i <= numSegmentsX - 1)) // bottom, except for corner cells
+                    idxNear = CalculateLinearCoordinate_CPU(i, j + 1);
+                if ((j == numSegmentsY)) // && (i >= 1) && (i <= numSegmentsX - 1)) // top, except for corner cells
+                    idxNear = CalculateLinearCoordinate_CPU(i, j - 1);
+                if ((i == numSegmentsX)) // && (j >= 1) && (j <= numSegmentsY - 1)) // right, except for corner cells
+                    idxNear = CalculateLinearCoordinate_CPU(i - 1, j);
 
+                // what about corner cells? for now, they are not treated (?)
+                V[idxCenter] = V[idxNear];
+                m[idxCenter] = m[idxNear];
+                h[idxCenter] = h[idxNear];
+                p[idxCenter] = p[idxNear];
+                q[idxCenter] = q[idxNear];
+                d[idxCenter] = d[idxNear];
+                f[idxCenter] = f[idxNear];
+            }
         }
 }
 
@@ -651,19 +664,8 @@ int main() {
 
                 int idxCenter = CalculateLinearCoordinate(i, j);
                 
-                
-                // uncommnent
-                // the borders: Dirichlet boundary conditions
-                if (i == 0 || j == 0 || i == (numPointsX - 1) || j == (numPointsY - 1)) 
-                {
-                    VNew[idxCenter] = VOld[idxCenter];
-                    mNew[idxCenter] = mOld[idxCenter];
-                    //nNew[idxCenter] = nOld[idxCenter];
-                    hNew[idxCenter] = hOld[idxCenter];
-                }
-                
-
-                else 
+                // inner cells
+                if (i != 0 || j != 0 || i != (numSegmentsX) || j != (numSegmentsY))
                 {
                     // for short names
                     int idxUp = CalculateLinearCoordinate(i, j + 1);
@@ -720,19 +722,50 @@ int main() {
                                                             INaOld, IKOld, ILeakOld, IHyperpolarOld, ISlowOld)
                                                                         + I_Stim(i, j, 0.*1e0)); // "standart" I_stim = 1e0;
                     
-               } // else
+               } // if
+               
+               // the borders: Neumann boundary conditions
+               else
+               {
+                    int idxNear;
+                    
+                    if ((i == 0) && (j >= 1) && (j <= numSegmentsY - 1)) // left border, except for corner cells
+                        idxNear = CalculateLinearCoordinate(i + 1, j);
+                    if ((j == 0) && (i >= 1) && (i <= numSegmentsX - 1)) // bottom, except for corner cells
+                        idxNear = CalculateLinearCoordinate(i, j + 1);
+                    if ((j == numSegmentsY) && (i >= 1) && (i <= numSegmentsX - 1)) // top, except for corner cells
+                        idxNear = CalculateLinearCoordinate(i, j - 1);
+                    if ((i == numSegmentsX) && (j >= 1) && (j <= numSegmentsY - 1)) // right, except for corner cells
+                        idxNear = CalculateLinearCoordinate(i - 1, j);
+
+                    // what about corner cells? for now, they are not treated (?)
+                    // Neumann boundary cond setting
+                    VNew[idxCenter] = VNew[idxNear];
+                    mNew[idxCenter] = mNew[idxNear];
+                    hNew[idxCenter] = hNew[idxNear];
+                    pNew[idxCenter] = pNew[idxNear];
+                    qNew[idxCenter] = qNew[idxNear];
+                    dNew[idxCenter] = dNew[idxNear];
+                    fNew[idxCenter] = fNew[idxNear];
+               }
+
             } // for
 	
 	} // acc kernels
 
-        if ((stepNumber % (500)) == 0) {
-            #pragma acc update host(VOld[0:numPointsTotal]) 
+        //if ((stepNumber % (500)) == 0) {
+        if ( (stepNumber) % (int)(T/dt/500)  == 0 ) {
+        #pragma acc update host(VOld[0:numPointsTotal]) 
 	        for(const auto& variable: variables) {// variables repr "X"Old values
-                int outNumber = stepNumber*dt;
+                int outNumber = stepNumber;
+                
+                if ((variable.first.compare("V")) == 0) // output only "V"
+                {
                 Write2VTK(variable.first, numPointsX, variable.second, hx, outNumber); // for now: numPointsX == numPointsY
                 //Write2VTK("V", numPointsX, variables["V"], hx, counterOutput); // for now: numPointsX == numPointsY
+                }
             }
-            printf("Time: %.2f completed\n", stepNumber*dt);
+            printf("Time: %.2f percent completed\n", 100.*stepNumber*dt/T);
 	        counterOutput++;
         }
         
