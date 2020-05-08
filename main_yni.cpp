@@ -27,14 +27,14 @@
 #include "CurrentSlow.hpp"
 
 // grid parameters
-#define numSegmentsX 10 //10
-#define numSegmentsY 10 //10
+#define numSegmentsX 20 //10
+#define numSegmentsY 20 //10
 #define numPointsX (numSegmentsX + 1) // = numCells
 #define numPointsY (numSegmentsY + 1) // = numCells
 #define numPointsTotal (numPointsX * numPointsY)
 #define hx 0.07 //1. // uncomment if cells are connected // (1./numSegmentsX)
 #define hy 0.07 //1. // uncomment if cells are connected // (1./numSegmentsY)
-#define T 2000. //(1000.) // old val: 500 // endtime (in ms)
+#define T (4000) //(1000.) // old val: 500 // endtime (in ms)
 #define dt 0.005 // old val = 1e-4 // timestep (in ms)
 
 // model parameters
@@ -42,8 +42,8 @@
 #define VRest (-60.) // NOTE: there exists no resting potential for SA node
 
 // tissue parameters
-#define Dx 0. //88e-3 //1e-3 //1e-3 // conductivity
-#define Dy 0. //88e-3 //1e-3 //1e-3 // conductivity
+#define Dx (7e-3) //88e-3 //1e-3 //1e-3 // conductivity
+#define Dy (7e-3) //88e-3 //1e-3 //1e-3 // conductivity
 
 
 
@@ -68,14 +68,17 @@ void Write2VTK(std::string fileName, const int n, real* p, const real h, const i
     f << "DIMENSIONS " << n + 1 << " " << n + 1 << " 1" << std::endl;
     f << "X_COORDINATES " << n + 1 << " double" << std::endl;
     for (int i = 0; i < n + 1; i++)
+    //for (int i = 1; i < n; i++)
         f << i * h << " ";
     f << std::endl;
     f << "Y_COORDINATES " << n + 1 << " double" << std::endl;
     for (int i = 0; i < n + 1; i++)
+    //for (int i = 1; i < n; i++)
         f << i * h << " ";
     f << std::endl;
     f << "Z_COORDINATES 1 double\n0" << std::endl;
     f << "CELL_DATA " << (n * n) << std::endl;
+    //f << "CELL_DATA " << (n-2) * (n-2) << std::endl;
     f << "SCALARS V_membrane double\nLOOKUP_TABLE default" << std::endl;
     for (int j = 0; j < n; j++) {
         for (int i = 0; i < n; i++)
@@ -224,16 +227,16 @@ real TotalIonCurrent(int idx, real V, real m, /* real n,*/ real h, real p, real 
     return -(INa[idx] + IK[idx] + ILeak[idx] + IHyperpolar[idx] + ISlow[idx]);
 }
 
-real TimeViaPhase(real phase, real Period, real t0) 
+real TimeViaPhase(real phase_, real Period_, real t0_) 
 {
     /* phi = phase; Period = T; t0 = time of first depolarization. */
     
-    return t0 + (Period / 2*M_PI) * phase;
+    return t0_ + Period_ / (2.*M_PI) * phase_;
     
 }
 
 // phase calculations
-real VviaPhase(real phase) 
+/*real*/ std::map<std::string, real> VviaPhase(real phase) 
 {
     // we dont need to perform memalloc for members within these structs
     State* Old = new State;
@@ -268,8 +271,8 @@ real VviaPhase(real phase)
     CurrentsNew->ISlow = new real[1];
 
     real THRESHOLD = -30; // hardcoded for now
-    real time0 = 10; // random value
-    real time1 = 5; // random value
+    real time0; // random value
+    real time1; // random value
     bool isThresholdFound = false;
 
     real tCurrent = 0;
@@ -278,23 +281,6 @@ real VviaPhase(real phase)
     // main loop: timestepping
     while (1)
     {
-        
-        /* // when threshold time (t0) is found: set t0
-        if (((New->V > THRESHOLD) && (Old->V < THRESHOLD)) && (isThresholdFound == false))
-        {
-                t0 = tCurrent; // nearest-neighbour interpolaion; change to linear!
-                isThresholdFound = true;
-                //return ; // phase(V)
-        }
-
-        // when 2nd threshold time (t1) is found: set t1 and then exit the loop
-        if (((New->V > THRESHOLD) && (Old->V < THRESHOLD)) && (isThresholdFound == true))
-        {
-            t1 = tCurrent; // nearest-neighbour interpolaion; change to linear!
-            break ; // phase(V)
-        }
-        */
-
 
         ///////////////// gating variables: ode ("reaction") step
         // TODO: make only ONE read of Old->V, etc. from memory; to more speedup, esp. for GPU
@@ -319,19 +305,23 @@ real VviaPhase(real phase)
                                  (CurrentsOld->ISlow))
                                  + I_Stim(0, 0, 0.*1e0) ); // "standart" I_stim = 1e
 
-        // when 2nd threshold time (t1) is found: set t1 and then exit the loop
-        if (((New->V > THRESHOLD) && (Old->V < THRESHOLD)) && (isThresholdFound == true))
+        // when threshold is found
+        if ((New->V > THRESHOLD) && (Old->V < THRESHOLD))
         {
-            time1 = tCurrent; // nearest-neighbour interpolaion; change to linear!
-            break;            // phase(V)
-        }
+            // when 2nd threshold time (t1) is found: set t1 and then exit the loop
+            if (isThresholdFound == true)
+            {
 
-        // when threshold time (t0) is found: set t0
-        if (((New->V > THRESHOLD) && (Old->V < THRESHOLD)) && (isThresholdFound == false))
-        {
-            time0 = tCurrent; // nearest-neighbour interpolaion; change to linear!
-            isThresholdFound = true;
-            //return ; // phase(V)
+                time1 = tCurrent; // nearest-neighbour interpolaion; change to linear!
+                break;            // phase(V)
+            }
+            else // when threshold time (t0) is found: set t0
+            {
+                time0 = tCurrent; // nearest-neighbour interpolaion; change to linear!
+                isThresholdFound = true;
+                //return ; // phase(V)
+            }
+
         }
 
         
@@ -346,15 +336,23 @@ real VviaPhase(real phase)
 
     } // while
 
+    //printf("t0 = %.2f, t1 = %.2f\n", time0, time1);
+    //std::cin.get();
 
     // set vars, calculated within the loop
-    real period = time1 - time0; // period of oscillations
+    real period = (time1 - time0);//*0.5; // period of oscillations; remove "0.5" when period calc bug is found!
     //printf("First loop is finished; period of oscillations: %.2f ms\n", period);
+    
+    
     // repeat the loop (calculations) again and find V(phi)
     tCurrent = 0; // again
     
     real tOfPhase = TimeViaPhase(phase, period, time0);
-    real VOfPhase; // to be determined in the loop below
+    //printf("Phase: %.2f, tOfPhase: %.2f\n", phase, tOfPhase);
+    //std::cin.get();
+
+    //real VOfPhase; // to be determined in the loop below
+    std::map<std::string, real> stateOfPhase;
 
     // (again) initial conditions: only for Old structs: New will be calculated in the loop
     Old->V = VRest;
@@ -371,8 +369,19 @@ real VviaPhase(real phase)
         // it means, dat we found the moment of time, corresponding to the phase value
         if (tCurrent >= tOfPhase)
         {    
-            VOfPhase = Old->V; // nearest-neighbour iterpolation; change to linear!
-            break;
+            //VOfPhase = Old->V; // nearest-neighbour iterpolation; change to linear!
+            stateOfPhase["V"] = Old->V;
+            stateOfPhase["m"] = Old->m;
+            stateOfPhase["h"] = Old->h;
+            stateOfPhase["p"] = Old->p;
+            stateOfPhase["q"] = Old->q;
+            stateOfPhase["d"] = Old->d;
+            stateOfPhase["f"] = Old->f;
+            //stateOfPhase[""]
+            //stateOfPhase[""]
+
+
+                break;
             //return VOfPhase;
         }
 
@@ -411,7 +420,7 @@ real VviaPhase(real phase)
     //printf("Second loop is finished; VOfPhase: %.1f mV\n", VOfPhase);
     //std::cin.get();
     // "return" --- is within the loop (look up)
-    return VOfPhase;
+    return stateOfPhase; //VOfPhase;
 }
 
 
@@ -448,7 +457,6 @@ real* f, real value) {
                 real phase = atan2(L, lsmall); // = angle in polar coords; use atan2() func instead of atan() !
                 
                 // check sign: atan2() returns vals. from [-pi, pi]
-                
                 if (phase < 0)
                 {
                     phase += 2*M_PI;
@@ -461,14 +469,24 @@ real* f, real value) {
                 //std::cin.get();
                 // TODO //////////////////////////////////////////////////////////////
 
-                V[idxCenter] = VviaPhase(phase); //M_PI/12. //VRest;
-                m[idxCenter] = 0.067;//m_inf_CPU(VRest); // 0.5
-                h[idxCenter] = 0.999; //h_inf_CPU(VRest); // 0.5
-                p[idxCenter] = 0.;// 0.1; // may be false; TODO perform calcs with higher T 
-                q[idxCenter] = 0.; // may be false; TODO perform calcs with higher T  
+                // the func returns a std::map of all the vars' values
+                std::map<std::string, real> stateForPhase = VviaPhase(phase);
 
-                d[idxCenter] = 0.; //0.;
-                f[idxCenter] = 1.; //1.;
+                //printf("Phase: %.2f deg., VOfPhase = %.2f\n", phase*180./M_PI, stateForPhase["V"]);
+                //std::cin.get();
+
+                V[idxCenter] = stateForPhase["V"];  //VviaPhase(phase); //M_PI/12. //VRest;
+                m[idxCenter] = stateForPhase["m"]; //0.067;//m_inf_CPU(VRest); // 0.5
+                h[idxCenter] = stateForPhase["h"]; //0.999; //h_inf_CPU(VRest); // 0.5
+                p[idxCenter] = stateForPhase["p"]; //0.;// 0.1; // may be false; TODO perform calcs with higher T 
+                q[idxCenter] = stateForPhase["q"]; //0.; // may be false; TODO perform calcs with higher T  
+
+                d[idxCenter] = stateForPhase["d"]; //0.; //0.;
+                f[idxCenter] = stateForPhase["f"]; //1.; //1.;
+
+                // for progress checking: in percents
+                printf("Set. initial cond: %.2f percent completed\n", 
+                        100.*idxCenter / CalculateLinearCoordinate_CPU(numSegmentsX, numSegmentsY));
             }
 
     // after filling the whole area: "fill" borders wiht Neumann boundary cond.
@@ -665,7 +683,7 @@ int main() {
                 int idxCenter = CalculateLinearCoordinate(i, j);
                 
                 // inner cells
-                if (i != 0 || j != 0 || i != (numSegmentsX) || j != (numSegmentsY))
+                if (i >= 1 && j >= 1 && i <= (numSegmentsX - 1) && j <= (numSegmentsY - 1))
                 {
                     // for short names
                     int idxUp = CalculateLinearCoordinate(i, j + 1);
@@ -731,12 +749,15 @@ int main() {
                     
                     if ((i == 0) && (j >= 1) && (j <= numSegmentsY - 1)) // left border, except for corner cells
                         idxNear = CalculateLinearCoordinate(i + 1, j);
-                    if ((j == 0) && (i >= 1) && (i <= numSegmentsX - 1)) // bottom, except for corner cells
+                    else if ((j == 0) && (i >= 1) && (i <= numSegmentsX - 1)) // bottom, except for corner cells
                         idxNear = CalculateLinearCoordinate(i, j + 1);
-                    if ((j == numSegmentsY) && (i >= 1) && (i <= numSegmentsX - 1)) // top, except for corner cells
+                    else if ((j == numSegmentsY) && (i >= 1) && (i <= numSegmentsX - 1)) // top, except for corner cells
                         idxNear = CalculateLinearCoordinate(i, j - 1);
-                    if ((i == numSegmentsX) && (j >= 1) && (j <= numSegmentsY - 1)) // right, except for corner cells
+                    else if ((i == numSegmentsX) && (j >= 1) && (j <= numSegmentsY - 1)) // right, except for corner cells
                         idxNear = CalculateLinearCoordinate(i - 1, j);
+                    else { // if corner cell
+                        continue; // do nothing, continue the "i,j" loop
+                    }
 
                     // what about corner cells? for now, they are not treated (?)
                     // Neumann boundary cond setting
@@ -753,10 +774,23 @@ int main() {
 	
 	} // acc kernels
 
-        //if ((stepNumber % (500)) == 0) {
-        if ( (stepNumber) % (int)(T/dt/500)  == 0 ) {
-        #pragma acc update host(VOld[0:numPointsTotal]) 
-	        for(const auto& variable: variables) {// variables repr "X"Old values
+        if ( ((int)(stepNumber*dt) % 10) == 0) { // output each 10 msec
+        //if ( (stepNumber) % (int)(T/dt/500)  == 0 ) {
+        #pragma acc update host(VOld[0:numPointsTotal])
+            variables["V"] = VOld;
+            variables["m"] = mOld;
+            variables["h"] = hOld;
+            variables["p"] = pOld;
+            variables["q"] = qOld;
+            variables["d"] = dOld;
+            variables["f"] = fOld;
+            variables["INa"] = INaOld;
+            variables["IK"] = IKOld;
+            variables["ILeak"] = ILeakOld;
+            variables["IHyperpolar"] = IHyperpolarOld;
+            variables["ISlow"] = ISlowOld;
+
+            for(const auto& variable: variables) {// variables repr "X"Old values
                 int outNumber = stepNumber;
                 
                 if ((variable.first.compare("V")) == 0) // output only "V"
