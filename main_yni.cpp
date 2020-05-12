@@ -27,14 +27,14 @@
 #include "CurrentSlow.hpp"
 
 // grid parameters
-#define numSegmentsX 20 //10
-#define numSegmentsY 20 //10
+#define numSegmentsX 30 //10
+#define numSegmentsY 30 //10
 #define numPointsX (numSegmentsX + 1) // = numCells
 #define numPointsY (numSegmentsY + 1) // = numCells
 #define numPointsTotal (numPointsX * numPointsY)
 #define hx 0.07 //1. // uncomment if cells are connected // (1./numSegmentsX)
 #define hy 0.07 //1. // uncomment if cells are connected // (1./numSegmentsY)
-#define T (4000) //(1000.) // old val: 500 // endtime (in ms)
+#define T (7000) //(1000.) // old val: 500 // endtime (in ms)
 #define dt 0.005 // old val = 1e-4 // timestep (in ms)
 
 // model parameters
@@ -774,7 +774,7 @@ int main() {
 	
 	} // acc kernels
 
-        if ( ((int)(stepNumber*dt) % 10) == 0) { // output each 10 msec
+        if ( (stepNumber % 2000) == 0) { // output each 10 msec: 10/dt = 2000
         //if ( (stepNumber) % (int)(T/dt/500)  == 0 ) {
         #pragma acc update host(VOld[0:numPointsTotal])
             variables["V"] = VOld;

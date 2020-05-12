@@ -1,3 +1,5 @@
+all: compile_cpu run
+
 compile_cpu:
 	g++ -std=c++11 -g main_yni.cpp CurrentSlow.cpp CurrentNa.cpp CurrentK.cpp CurrentLeak.cpp CurrentHyperpolar.cpp -o yni_exec
 
