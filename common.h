@@ -4,6 +4,7 @@
 #include <math.h>
 #include <time.h>
 #include <stdbool.h>
+#include <stdlib.h>
 //#include <fstream>
 //#include <cstdlib>
 //#include <iostream>
