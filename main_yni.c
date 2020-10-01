@@ -36,7 +36,7 @@
 //#define numPointsTotal (numPointsX * numPointsY)
 #define hx 0.07 //1. // uncomment if cells are connected // (1./numSegmentsX)
 #define hy 0.07 //1. // uncomment if cells are connected // (1./numSegmentsY)
-#define T (7000.) //(1000.) // old val: 500 // endtime (in ms)
+//#define T (5000.) //(1000.) // old val: 500 // endtime (in ms)
 #define dt 0.005 // old val = 1e-4 // timestep (in ms)
 
 // model parameters
@@ -384,8 +384,8 @@ real* f, real value, int numPointsX, int numPointsY) {
                 f[idxCenter] = stateForPhase[f_]; //1.; //1.;
 
                 // for progress checking: in percents
-                //printf("Set. initial cond: %.2f percent completed\n", 
-                //        100.*idxCenter / CalculateLinearCoordinate_CPU(numPointsX - 1, numPointsY - 1, numPointsX));
+                printf("Set. initial cond: %.2f percent completed\n", 
+                        100.*idxCenter / CalculateLinearCoordinate_CPU(numPointsX - 1, numPointsY - 1, numPointsX));
             }
 
     // after filling the whole area: "fill" borders wiht Neumann boundary cond.
@@ -485,7 +485,8 @@ real* INa, real* IK, real* ILeak, real* IHyperpolar, real* ISlow) {
 
 
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) 
+{
 
     // setting a GPU for the computations; NOTE: req "openacc.h"!
     //acc_set_device_num(1, acc_device_nvidia);
@@ -503,6 +504,8 @@ int main(int argc, char** argv) {
     int numPointsY = numSegmentsY + 1;
 
     int numPointsTotal = numPointsX * numPointsY;
+
+    const int T = atof(argv[4]);
 
     // allocating memory
     
@@ -589,11 +592,15 @@ deviceptr(tmp)
 	present(VOld[0:numPointsTotal], mOld[0:numPointsTotal], hOld[0:numPointsTotal], \
                 pOld[0:numPointsTotal], qOld[0:numPointsTotal], dOld[0:numPointsTotal], fOld[0:numPointsTotal], \
                 VNew[0:numPointsTotal], mNew[0:numPointsTotal], hNew[0:numPointsTotal], \
-                pNew[0:numPointsTotal], qNew[0:numPointsTotal], dNew[0:numPointsTotal], fNew[0:numPointsTotal])
+                pNew[0:numPointsTotal], qNew[0:numPointsTotal], dNew[0:numPointsTotal], fNew[0:numPointsTotal]), \
+                num_workers(1), vector_length(32)
 	{
 	
-	#pragma acc loop collapse(2) independent
-	for (int j = 0; j < numPointsY; j++)
+	//#pragma acc loop collapse(2) independent
+	#pragma acc loop gang
+    for (int j = 0; j < numPointsY; j++)
+    {
+            #pragma acc loop vector
             for (int i = 0; i < numPointsX; i++) 
             {
 
@@ -682,8 +689,8 @@ deviceptr(tmp)
                     fNew[idxCenter] = fNew[idxNear];
                }
 
-            } // for
-	
+            } // for i
+    } // for j
 	} // acc parallel
 
         if ( (stepNumber % 2000) == 0)  // output each 10 msec: 10/dt = 2000
