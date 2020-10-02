@@ -1,4 +1,6 @@
-#pragma once
+//#pragma once // this wont work!
+#ifndef __COMMON_H
+#define __COMMON_H
 
 #include <stdio.h>
 #include <math.h>
@@ -12,3 +14,5 @@
 typedef double real;
 
 #define M_PI acos(-1.)
+
+#endif

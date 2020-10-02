@@ -48,7 +48,7 @@
 #define Dy (6*7e-3) //88e-3 //1e-3 //1e-3 // conductivity
 
 
-// Currents are in the end of enum
+// Currents are in the end of the enum
 enum vars {V_, m_, h_, p_, q_, d_, f_, INa_, IK_, ILeak_, IHyperpolar_, ISlow_};
 
 
@@ -384,8 +384,8 @@ real* f, real value, int numPointsX, int numPointsY) {
                 f[idxCenter] = stateForPhase[f_]; //1.; //1.;
 
                 // for progress checking: in percents
-                printf("Set. initial cond: %.2f percent completed\n", 
-                        100.*idxCenter / CalculateLinearCoordinate_CPU(numPointsX - 1, numPointsY - 1, numPointsX));
+                // printf("Set. initial cond: %.2f percent completed\n", 
+                //        100.*idxCenter / CalculateLinearCoordinate_CPU(numPointsX - 1, numPointsY - 1, numPointsX));
             }
 
     // after filling the whole area: "fill" borders wiht Neumann boundary cond.
@@ -489,23 +489,22 @@ int main(int argc, char** argv)
 {
 
     // setting a GPU for the computations; NOTE: req "openacc.h"!
-    //acc_set_device_num(1, acc_device_nvidia);
+    // acc_set_device_num(1, acc_device_nvidia);
 
-    // reading the params from the console
-    int numSegmentsX = atoi(argv[1]);
-    int numSegmentsY = atoi(argv[2]);
-    //int serieOfLaunchesNum = atoi(argv[3]);
-    
-    // storing output file's name in char[]
-    /* string */ char tmp_output_file[256];
-    sprintf(tmp_output_file, argv[3]); 
-    
-    int numPointsX = numSegmentsX + 1;
-    int numPointsY = numSegmentsY + 1;
-
+    // we pass number of cells as command line args; 
+    // reading the params from the console:
+    const char* numCellsX_s = argv[1];
+    int numCellsX = atoi(numCellsX_s); // atoi(argv[1]);
+    int numCellsY = numCellsX; // atoi(argv[2]);
+    int numCellsTotal = numCellsX*numCellsY;
+    // int serieOfLaunchesNum = atoi(argv[3]);
+    int numPointsX = numCellsX + 2; // includes 2 ghost cells; numCells + 2 = numPointsX
+    int numPointsY = numCellsY + 2; // same
     int numPointsTotal = numPointsX * numPointsY;
 
-    const int T = atof(argv[4]);
+
+    const char* T_s = argv[2];
+    const real T = atof(T_s); // atoi(argv[2]);
 
     // allocating memory
     
@@ -545,20 +544,41 @@ int main(int argc, char** argv)
 
     real* tmp; // a pointer for swapping time-layers 'n' and 'n+1'
 
+    const int NUM_VARS = 12;
     // for output in a loop
-    real* variables[12];
-    variables[V_] = VOld;
-    variables[m_] = mOld;
-    variables[h_] = hOld;
-    variables[p_] = pOld;
-    variables[q_] = qOld;
-    variables[d_] = dOld;
-    variables[f_] = fOld;
-    variables[INa_] = INaOld;
-    variables[IK_] = IKOld;
-    variables[ILeak_] = ILeakOld;
-    variables[IHyperpolar_] = IHyperpolarOld;
-    variables[ISlow_] = ISlowOld;
+    real* variablesOld[NUM_VARS];
+    variablesOld[V_] = VOld;
+    
+    variablesOld[m_] = mOld;
+    variablesOld[h_] = hOld;
+    variablesOld[p_] = pOld;
+    variablesOld[q_] = qOld;
+    variablesOld[d_] = dOld;
+    variablesOld[f_] = fOld;
+    
+    variablesOld[INa_] = INaOld;
+    variablesOld[IK_] = IKOld;
+    variablesOld[ILeak_] = ILeakOld;
+    variablesOld[IHyperpolar_] = IHyperpolarOld;
+    variablesOld[ISlow_] = ISlowOld;
+    
+    real* variablesNew[NUM_VARS];
+    variablesNew[V_] = VNew;
+    
+    variablesNew[m_] = mNew;
+    variablesNew[h_] = hNew;
+    variablesNew[p_] = pNew;
+    variablesNew[q_] = qNew;
+    variablesNew[d_] = dNew;
+    variablesNew[f_] = fNew;
+    
+    variablesNew[INa_] = INaNew;
+    variablesNew[IK_] = IKNew;
+    variablesNew[ILeak_] = ILeakNew;
+    variablesNew[IHyperpolar_] = IHyperpolarNew;
+    variablesNew[ISlow_] = ISlowNew;
+    
+    //char varNames[NUM_VARS] = {"V", "m", "h", "p", "q", "d", "f"};
     // = {"V", "m", "h", "p", "q", "d", "f"};
 
 
@@ -579,7 +599,7 @@ pOld[0:numPointsTotal], qOld[0:numPointsTotal], dOld[0:numPointsTotal], fOld[0:n
 VNew[0:numPointsTotal], mNew[0:numPointsTotal], hNew[0:numPointsTotal], \
 pNew[0:numPointsTotal], qNew[0:numPointsTotal], dNew[0:numPointsTotal], fNew[0:numPointsTotal], \
 INaOld[0:numPointsTotal], IKOld[0:numPointsTotal], ILeakOld[0:numPointsTotal], IHyperpolarOld[0:numPointsTotal], \
-ISlowOld[0:numPointsTotal]) \
+ISlowOld[0:numPointsTotal]), \
 deviceptr(tmp)
 {
     // main loop: timestepping
@@ -590,32 +610,34 @@ deviceptr(tmp)
         
 	#pragma acc parallel \
 	present(VOld[0:numPointsTotal], mOld[0:numPointsTotal], hOld[0:numPointsTotal], \
-                pOld[0:numPointsTotal], qOld[0:numPointsTotal], dOld[0:numPointsTotal], fOld[0:numPointsTotal], \
-                VNew[0:numPointsTotal], mNew[0:numPointsTotal], hNew[0:numPointsTotal], \
-                pNew[0:numPointsTotal], qNew[0:numPointsTotal], dNew[0:numPointsTotal], fNew[0:numPointsTotal]), \
-                num_workers(1), vector_length(32)
+    pOld[0:numPointsTotal], qOld[0:numPointsTotal], dOld[0:numPointsTotal], fOld[0:numPointsTotal], \
+    VNew[0:numPointsTotal], mNew[0:numPointsTotal], hNew[0:numPointsTotal], \
+    pNew[0:numPointsTotal], qNew[0:numPointsTotal], dNew[0:numPointsTotal], fNew[0:numPointsTotal]), \
+    num_workers(1), vector_length(32)
 	{
 	
 	//#pragma acc loop collapse(2) independent
 	#pragma acc loop gang
-    for (int j = 0; j < numPointsY; j++)
+    for (int j = 1; j < numPointsY - 1; j++)
     {
             #pragma acc loop vector
-            for (int i = 0; i < numPointsX; i++) 
+            for (int i = 1; i < numPointsX - 1; i++) 
             {
 
                 int idxCenter = CalculateLinearCoordinate(i, j, numPointsX);
                 
                 // inner cells
-                if (i >= 1 && j >= 1 && i <= (numSegmentsX - 1) && j <= (numSegmentsY - 1))
-                {
+                //if (i >= 1 && j >= 1 && i <= (numPointsX - 1) && j <= (numPointsY - 1))
+                //{
                     // for short names
                     int idxUp = CalculateLinearCoordinate(i, j + 1, numPointsX);
                     int idxDown = CalculateLinearCoordinate(i, j - 1, numPointsX);
                     int idxLeft = CalculateLinearCoordinate(i - 1, j, numPointsX);
                     int idxRight = CalculateLinearCoordinate(i + 1, j, numPointsX);
 
-                    
+                    // reading VOld[idxCenter] ONLY ONCE, 4speedup
+                    //real VOldCenter = VOld[idxCenter];
+
                     ///////////////// gating variables: ode ("reaction") step
 
                     // TODO: make only ONE read of VOld[idxCenter], etc from memory; to more speedup, esp. for GPU
@@ -656,23 +678,26 @@ deviceptr(tmp)
                     + dt / Cm * (TotalIonCurrent(idxCenter, VOld[idxCenter], mOld[idxCenter],
                                                              hOld[idxCenter], pOld[idxCenter], 
                                                             qOld[idxCenter], dOld[idxCenter], fOld[idxCenter],
-                                                            INaOld, IKOld, ILeakOld, IHyperpolarOld, ISlowOld));
-                                                                        // + I_Stim(i, j, 0.*1e0)); // "standart" I_stim = 1e0;
+                                                            INaOld, IKOld, ILeakOld, IHyperpolarOld, ISlowOld)
+                                                                         + I_Stim(i, j, 0.*1e0)); // "standart" I_stim = 1e0;
                     
-               } // if
+               //} // if
                
+               
+
+               /*
                // the borders: Neumann boundary conditions
                else
                {
                     int idxNear;
                     
-                    if ((i == 0) && (j >= 1) && (j <= numSegmentsY - 1)) // left border, except for corner cells
+                    if ((i == 0) && (j >= 1) && (j <= numPointsY - 1)) // left border, except for corner cells
                         idxNear = CalculateLinearCoordinate(i + 1, j, numPointsX);
-                    else if ((j == 0) && (i >= 1) && (i <= numSegmentsX - 1)) // bottom, except for corner cells
+                    else if ((j == 0) && (i >= 1) && (i <= numPointsX - 1)) // bottom, except for corner cells
                         idxNear = CalculateLinearCoordinate(i, j + 1, numPointsX);
-                    else if ((j == numSegmentsY) && (i >= 1) && (i <= numSegmentsX - 1)) // top, except for corner cells
+                    else if ((j == numPointsY) && (i >= 1) && (i <= numPointsX - 1)) // top, except for corner cells
                         idxNear = CalculateLinearCoordinate(i, j - 1, numPointsX);
-                    else if ((i == numSegmentsX) && (j >= 1) && (j <= numSegmentsY - 1)) // right, except for corner cells
+                    else if ((i == numPointsX) && (j >= 1) && (j <= numPointsY - 1)) // right, except for corner cells
                         idxNear = CalculateLinearCoordinate(i - 1, j, numPointsX);
                     else { // if corner cell
                         continue; // do nothing, continue the "i,j" loop
@@ -689,32 +714,85 @@ deviceptr(tmp)
                     fNew[idxCenter] = fNew[idxNear];
                }
 
+            */
+
             } // for i
     } // for j
-	} // acc parallel
+	} // acc parallel 4 inner cells
+
+    #pragma acc parallel async(0) \
+    present(VNew[0:numPointsTotal])
+    {
+        #pragma acc loop vector // seq
+        for (int j = 1; j < numPointsY - 1; j++)
+        {
+            int idxCenterLeftBord = CalculateLinearCoordinate(0, j, numPointsX);
+            int idxCenterRightBord = CalculateLinearCoordinate(numPointsX - 1, j, numPointsX);
+                            
+            int idxNearLeft = CalculateLinearCoordinate(1, j, numPointsX);
+            int idxNearRight = CalculateLinearCoordinate(numPointsX - 1 - 1, j, numPointsX);
+
+            VNew[idxCenterLeftBord] = VNew[idxNearLeft];
+            VNew[idxCenterRightBord] = VNew[idxNearRight];
+        }
+    }
+
+    #pragma acc parallel async(1) \
+    present(VNew[0:numPointsTotal])
+    {
+        #pragma acc loop vector // seq
+        for (int i = 1; i < numPointsX - 1; i++)
+        {
+            int idxCenterBottomBord = CalculateLinearCoordinate(i, 0, numPointsX);
+            int idxCenterTopBord = CalculateLinearCoordinate(i, numPointsY - 1, numPointsX);
+                        
+            int idxNearBottom = CalculateLinearCoordinate(i, 1, numPointsX);
+            int idxNearTop = CalculateLinearCoordinate(i, numPointsY - 1 - 1, numPointsX);
+
+            VNew[idxCenterBottomBord] = VNew[idxNearBottom];
+            VNew[idxCenterTopBord] = VNew[idxNearTop];
+        }
+    }
+                
+    #pragma acc wait(0, 1)      
+
 
         if ( (stepNumber % 2000) == 0)  // output each 10 msec: 10/dt = 2000
         {
             //if ( (stepNumber) % (int)(T/dt/500)  == 0 ) {
-            #pragma acc update host(VOld[0:numPointsTotal])
-            variables[V_] = VOld;
-            //variables[m_] = mOld;
-            //variables[h_] = hOld;
-            //variables[p_] = pOld;
-            //variables[q_] = qOld;
-            //variables[d_] = dOld;
-            //variables[f_] = fOld;
-            //variables[INa_] = INaOld;
-            //variables[IK_] = IKOld;
-            //variables[ILeak_] = ILeakOld;
-            //variables[IHyperpolar_] = IHyperpolarOld;
-            //variables[ISlow_] = ISlowOld;
+            #pragma acc update host(VOld[0:numPointsTotal], mOld[0:numPointsTotal], hOld[0:numPointsTotal], \
+            pOld[0:numPointsTotal], qOld[0:numPointsTotal], dOld[0:numPointsTotal], fOld[0:numPointsTotal], \
+            INaOld[0:numPointsTotal], IKOld[0:numPointsTotal], ILeakOld[0:numPointsTotal], IHyperpolarOld[0:numPointsTotal], \
+            ISlowOld[0:numPointsTotal])
+            
+            //variablesOld[V_] = VOld;
+            //variablesOld[m_] = mOld;
+            //variablesOld[h_] = hOld;
+            //variablesOld[p_] = pOld;
+            //variablesOld[q_] = qOld;
+            //variablesOld[d_] = dOld;
+            //variablesOld[f_] = fOld;
+            //variablesOld[INa_] = INaOld;
+            //variablesOld[IK_] = IKOld;
+            //variablesOld[ILeak_] = ILeakOld;
+            //variablesOld[IHyperpolar_] = IHyperpolarOld;
+            //variablesOld[ISlow_] = ISlowOld;
 
             int outNumber = stepNumber;
                 
-            Write2VTK(numPointsX, variables[V_], hx, outNumber);
+            // output 2VTKs in a loop over enums
+            for (int k = 0; k < NUM_VARS; k++)
+            {    
+                Write2VTK_2D_noGhosts(numPointsX, variablesOld[k], hx, outNumber, k); // for now: numPointsX == numPointsY
+                
+                //Write2VTKWithGhosts(numPointsX, variablesOld[V_], hx, outNumber); // for now: numPointsX == numPointsY
+                //Write2VTK_2D_noGhosts(numPointsX, variablesOld[V_], hx, outNumber, k); // for now: numPointsX == numPointsY
+                //Write2VTK_2D_noGhosts(numPointsX, variablesOld[INa_], hx, outNumber, "INa"); // for now: numPointsX == numPointsY
+            }
+            
+            //Write2VTK_2D(numPointsX, variables[V_], hx, counterOutput); // for now: numPointsX == numPointsY
 
-            printf("Time: %.2f percent completed\n", 100.*stepNumber*dt/T);
+            printf("Progress: %.2f %% completed\n", 100.*stepNumber*dt/T);
 	        counterOutput += 1;
         }
         
@@ -740,6 +818,7 @@ deviceptr(tmp)
         tmp = dOld; dOld = dNew; dNew = tmp;
         ///// swap f
         tmp = fOld; fOld = fNew; fNew = tmp;
+        
         /*
         ///// swap INa
         tmp = INaOld; INaOld = INaNew; INaNew = tmp;
@@ -769,14 +848,30 @@ deviceptr(tmp)
 } // acc data
 
     real elapsedTime = (real)( ((real)(clock() - start))/CLOCKS_PER_SEC );
-    printf("\nCalculations finished. Elapsed time = %.2e sec\n", elapsedTime);
+    printf("\nCalculations finished. Elapsed time: %.2e s.\n", elapsedTime);
+
+
+    // OUTPUT: elapsed time
+    // storing output file's name in char[]
+    /* string */ // char tmp_output_file[256];
+    // sprintf(tmp_output_file, argv[4]);
+    char* outFile4Timing = concat( concat(concat(concat("timing_dim_", numCellsX_s), "x"), numCellsX_s), 
+                            concat(concat("_cells_T_", T_s), "_ms.txt"));
 
     // printing elapsed time into a file
-    FILE* ff = fopen(tmp_output_file, "w");
-    fprintf(ff, "%.2f", elapsedTime);
+    FILE* ff = fopen(concat("./timings/", outFile4Timing), "w"); // "timings" --- folder name
+    fprintf(ff, "%.6e", elapsedTime); // in sec.
     fclose(ff);
     
     // cleaning up
+    for (int k = 0; k < NUM_VARS; k++)
+    {
+        free(variablesOld[k]);
+        free(variablesNew[k]);
+    }
+
+    /*
+    // cleaning up OLD VERS
     free(VOld);
     free(VNew);
     free(mOld);
@@ -791,7 +886,7 @@ deviceptr(tmp)
     free(dNew);
     free(fOld);
     free(fNew);
-
+    */
 
     return 0;
 }
