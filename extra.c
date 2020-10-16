@@ -11,10 +11,12 @@ char* concat(const char *s1, const char *s2)
 }
 
 
-void Write2VTK_2D(const int n, real* p, const real h, const int step)
+void Write2VTK_2D(const int n, real* p, const real h, const int timestep, int varNum)
 {
     char fn[256];
-    sprintf(fn, "./output/V.%d.vtk", step); 
+    //sprintf(fn, "./output/V.%d.vtk", step); 
+
+    sprintf(fn, "./output/var_%d_step_%d.vtk", varNum, timestep); 
 
     // n --- dim of 2D array with ghost cells
 
@@ -80,11 +82,11 @@ void Write2VTK_2D(const int n, real* p, const real h, const int step)
     */
 }
 
-void Write2VTK_2D_noGhosts(const int n, real* p, const real h, const int step, int varNum /* char* varName */)
+void Write2VTK_2D_noGhosts(const int n, real* p, const real h, const int timestep, int varNum /* char* varName */)
 {
     char fn[256];
     
-    sprintf(fn, "./output/var_%d_noGhosts_step_%d.vtk", varNum, step); 
+    sprintf(fn, "./output/var_%d_noGhosts_step_%d.vtk", varNum, timestep); 
 
     // version 4 char* varName, passed as an arg. of the func
     //char* varNameFull = concat( concat("./output/", varName), "NoGhosts.");

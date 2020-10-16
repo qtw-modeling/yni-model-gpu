@@ -34,8 +34,8 @@
 //#define numPointsX (numSegmentsX + 1) // = numCells
 //#define numPointsY (numSegmentsY + 1) // = numCells
 //#define numPointsTotal (numPointsX * numPointsY)
-#define hx 0.07 //1. // uncomment if cells are connected // (1./numSegmentsX)
-#define hy 0.07 //1. // uncomment if cells are connected // (1./numSegmentsY)
+//#define hx 0.07 //1. // uncomment if cells are connected // (1./numSegmentsX)
+//#define hy 0.07 //1. // uncomment if cells are connected // (1./numSegmentsY)
 //#define T (5000.) //(1000.) // old val: 500 // endtime (in ms)
 #define dt 0.005 // old val = 1e-4 // timestep (in ms)
 
@@ -43,10 +43,17 @@
 #define Cm 1.
 #define VRest (-60.) // NOTE: there exists no resting potential for SA node
 
-// tissue parameters
-#define Dx (6*7e-3) //88e-3 //1e-3 //1e-3 // conductivity
-#define Dy (6*7e-3) //88e-3 //1e-3 //1e-3 // conductivity
+#define GX (110e-5) //  in mS; 6e-5 mS --- is equal to 60 nS in article SAN-fibros, 2018
+#define GY (110e-5) // in mS; is equal to 60 nS in article SAN-fibros, 2018
 
+#define CELL_SIZE (7e-3) // in cm; is equal to 70 mu*m in article SAN-fibros, 2018
+
+// tissue parameters
+#define DX (GX/Cm) //*CELL_SIZE*CELL_SIZE)  // (1.5e-4) // (60e-3) // (6*7e-3)  // conductivity
+#define DY (GY/Cm) //*CELL_SIZE*CELL_SIZE)  // (1.5e-4) // (60e-3) // (6*7e-3)  // conductivity
+
+#define AREA_SIZE_X (1.) // (10.) // should be in cm
+#define AREA_SIZE_Y (1.) // (10.) // should be in cm
 
 // Currents are in the end of the enum
 enum vars {V_, m_, h_, p_, q_, d_, f_, INa_, IK_, ILeak_, IHyperpolar_, ISlow_};
@@ -296,6 +303,7 @@ real* CalculateStateFromFile(real phase)
     fread(stateOfPhaseOld, 7*sizeof(real), 1, fp);
     
     // going over all data in the bin file
+    //int counter = 1;
     while (1)
     {
         
@@ -315,6 +323,10 @@ real* CalculateStateFromFile(real phase)
 
         tmp = stateOfPhaseOld; stateOfPhaseOld = stateOfPhaseNew; stateOfPhaseNew = tmp;
         
+        //counter++;
+        
+
+        //printf("Iteration #%d over the binary file\n", counter);
 
     }
     
@@ -325,18 +337,14 @@ real* CalculateStateFromFile(real phase)
 
 
 void SetInitialConditions_CPU(real* V, real* m, real* h, real* p, real* q, real* d, 
-real* f, real value, int numPointsX, int numPointsY) {
+real* f, real value, int numPointsX, int numPointsY, real hx, real hy) 
+{
     int idx;
-    //std::srand(unsigned(1.)); // initial seed for random number generator
-    //real randomNumber;
-
-    // single initial peak
-    //int iCenter = (int)((real)numSegmentsX /2.);
-    //int jCenter = (int)((real)numSegmentsY /2.); // tmp values
-    //int idxCenter = CalculateLinearCoordinate_CPU(iCenter, jCenter);
 
     for (int j = 0; j < numPointsY; j++)
-        for (int i = 0; i < numPointsX; i++) {
+    {
+        for (int i = 0; i < numPointsX; i++)
+        {
 
             int idxCenter = CalculateLinearCoordinate_CPU(i, j, numPointsX);
             //randomNumber =  ((real)(std::rand() % 20))/20.; // 4phase setting
@@ -356,14 +364,14 @@ real* f, real value, int numPointsX, int numPointsY) {
 
                 real phase = atan2(L, lsmall); // = angle in polar coords; use atan2() func instead of atan() !
                 
+                //phase = phase - M_PI/2.; // phase shift according to R.Syunyaev article, 2017
+                
                 // check sign: atan2() returns vals. from [-pi, pi]
                 if (phase < 0)
                 {
                     phase += 2*M_PI;
                 }
                 
-
-                //real phaseShifted = phase - M_PI/2.; // phase from R.Syunyaev article
                 
                 //printf("Phase = %.2f deg.\n", phase*180/M_PI);
                 //std::cin.get();
@@ -371,7 +379,7 @@ real* f, real value, int numPointsX, int numPointsY) {
 
                 real* stateForPhase = CalculateStateFromFile(phase);
 
-                //printf("Phase: %.2f deg., VOfPhase = %.2f\n", phase*180./M_PI, stateForPhase["V"]);
+                //printf("Phase: %.2f deg., VOfPhase = %.2f\n", phase*180./M_PI, stateForPhase[V_]);
                 //std::cin.get();
 
                 V[idxCenter] = stateForPhase[V_];  //VviaPhase(phase); //M_PI/12. //VRest;
@@ -384,13 +392,15 @@ real* f, real value, int numPointsX, int numPointsY) {
                 f[idxCenter] = stateForPhase[f_]; //1.; //1.;
 
                 // for progress checking: in percents
-                // printf("Set. initial cond: %.2f percent completed\n", 
+                //printf("Set. initial cond: %.2f percent completed\n", 
                 //        100.*idxCenter / CalculateLinearCoordinate_CPU(numPointsX - 1, numPointsY - 1, numPointsX));
             }
+    }
 
     // after filling the whole area: "fill" borders wiht Neumann boundary cond.
     // the borders: Neumann boundary conditions
     for (int j = 0; j < numPointsY; j++)
+    {    
         for (int i = 0; i < numPointsX; i++)
         {
             int idxCenter = CalculateLinearCoordinate_CPU(i, j, numPointsX);
@@ -417,8 +427,10 @@ real* f, real value, int numPointsX, int numPointsY) {
                 q[idxCenter] = q[idxNear];
                 d[idxCenter] = d[idxNear];
                 f[idxCenter] = f[idxNear];
-            }
-        }
+            } // if
+        } // for i
+    } // for j
+
 }
 
 
@@ -502,9 +514,11 @@ int main(int argc, char** argv)
     int numPointsY = numCellsY + 2; // same
     int numPointsTotal = numPointsX * numPointsY;
 
+    real hx = AREA_SIZE_X / (numPointsX - 1);
+    real hy = AREA_SIZE_Y / (numPointsY - 1);
 
     const char* T_s = argv[2];
-    const real T = atof(T_s); // atoi(argv[2]);
+    const int T = atoi(T_s); // atoi(argv[2]);
 
     // allocating memory
     
@@ -582,15 +596,17 @@ int main(int argc, char** argv)
     // = {"V", "m", "h", "p", "q", "d", "f"};
 
 
-    // initializing before timesteppin'
-    SetInitialConditions_CPU(VOld, mOld, /* nOld,*/ hOld, pOld, qOld, dOld, fOld, 0., numPointsX, numPointsY);
+    // initializing before timestepping
+    SetInitialConditions_CPU(VOld, mOld, /* nOld,*/ hOld, pOld, qOld, dOld, fOld, 0., numPointsX, numPointsY, hx, hy);
     //SetInitialConditions_CPU(VNew, mNew, /* nNew,*/ hNew, pNew, qNew, dNew, fNew, 0.); // for avoiding "junk" values in all '...New' arrays
 
     real tCurrent = 0.;
     int stepNumber = 0;
     int counterOutput = 1;
+    const int stepsOutput = 1000; // output each 10 ms: 10/dt = 2000; each 5 ms: 5/dt = 1000
+    int startOfTimestep; // , timeBetweenOutputs;
 
-    printf("Timesteppin' begins...\n");
+    printf("Timestepping begins...\n");
     clock_t start = clock();
 
 // pragmas without "-acc" flag --- are ignored?
@@ -605,9 +621,11 @@ deviceptr(tmp)
     // main loop: timestepping
     while (tCurrent < T) 
     {
+        // for measuring remaining time, which is being printed to console
+        if ( ((stepNumber - 1) % stepsOutput == 0) && stepNumber > 0)
+            startOfTimestep = clock(); // beginning of measuring time between outputs to .vtk
 
-        // TODO: change order of indexing (i, j)
-        
+    // TODO: change order of indexing (i, j)
 	#pragma acc parallel \
 	present(VOld[0:numPointsTotal], mOld[0:numPointsTotal], hOld[0:numPointsTotal], \
     pOld[0:numPointsTotal], qOld[0:numPointsTotal], dOld[0:numPointsTotal], fOld[0:numPointsTotal], \
@@ -626,95 +644,52 @@ deviceptr(tmp)
 
                 int idxCenter = CalculateLinearCoordinate(i, j, numPointsX);
                 
-                // inner cells
-                //if (i >= 1 && j >= 1 && i <= (numPointsX - 1) && j <= (numPointsY - 1))
-                //{
-                    // for short names
-                    int idxUp = CalculateLinearCoordinate(i, j + 1, numPointsX);
-                    int idxDown = CalculateLinearCoordinate(i, j - 1, numPointsX);
-                    int idxLeft = CalculateLinearCoordinate(i - 1, j, numPointsX);
-                    int idxRight = CalculateLinearCoordinate(i + 1, j, numPointsX);
+                
+                // for short names
+                int idxUp = CalculateLinearCoordinate(i, j + 1, numPointsX);
+                int idxDown = CalculateLinearCoordinate(i, j - 1, numPointsX);
+                int idxLeft = CalculateLinearCoordinate(i - 1, j, numPointsX);
+                int idxRight = CalculateLinearCoordinate(i + 1, j, numPointsX);
 
-                    // reading VOld[idxCenter] ONLY ONCE, 4speedup
-                    //real VOldCenter = VOld[idxCenter];
+                // reading VOld[idxCenter] ONLY ONCE, 4speedup
+                real VOldCenter = VOld[idxCenter];
 
-                    ///////////////// gating variables: ode ("reaction") step
+                ///////////////// gating variables: ode ("reaction") step
 
-                    // TODO: make only ONE read of VOld[idxCenter], etc from memory; to more speedup, esp. for GPU
-                    mNew[idxCenter] = m_inf(VOld[idxCenter]) + (mOld[idxCenter] - m_inf(VOld[idxCenter]))
-                                                                * exp(-dt * (alpha_m(VOld[idxCenter]) + beta_m(VOld[idxCenter])));
+                // TODO: make only ONE read of VOld[idxCenter], etc from memory; to more speedup, esp. for GPU
+                mNew[idxCenter] = m_inf(VOldCenter) + (mOld[idxCenter] - m_inf(VOldCenter))
+                                                                * exp(-dt * (alpha_m(VOldCenter) + beta_m(VOldCenter)));
 
 
-                    hNew[idxCenter] = h_inf(VOld[idxCenter]) + (hOld[idxCenter] - h_inf(VOld[idxCenter]))
-                                                                * exp(-dt * (alpha_h(VOld[idxCenter]) + beta_h(VOld[idxCenter])));
+                hNew[idxCenter] = h_inf(VOldCenter) + (hOld[idxCenter] - h_inf(VOldCenter))
+                                                                * exp(-dt * (alpha_h(VOldCenter) + beta_h(VOldCenter)));
                     
-                    pNew[idxCenter] = p_inf(VOld[idxCenter]) + (pOld[idxCenter] - p_inf(VOld[idxCenter]))
-                                                                * exp(-dt * (alpha_p(VOld[idxCenter]) + beta_p(VOld[idxCenter])));
+                pNew[idxCenter] = p_inf(VOldCenter) + (pOld[idxCenter] - p_inf(VOldCenter))
+                                                                * exp(-dt * (alpha_p(VOldCenter) + beta_p(VOldCenter)));
                    
-                    qNew[idxCenter] = q_inf(VOld[idxCenter]) + (qOld[idxCenter] - q_inf(VOld[idxCenter]))
-                                                                * exp(-dt * (alpha_q(VOld[idxCenter]) + beta_q(VOld[idxCenter])));
+                qNew[idxCenter] = q_inf(VOldCenter) + (qOld[idxCenter] - q_inf(VOldCenter))
+                                                                * exp(-dt * (alpha_q(VOldCenter) + beta_q(VOldCenter)));
                     
-
-                    dNew[idxCenter] = d_inf(VOld[idxCenter]) + (dOld[idxCenter] - d_inf(VOld[idxCenter]))
-                                                                * exp(-dt * (alpha_d(VOld[idxCenter]) + beta_d(VOld[idxCenter])));
+                dNew[idxCenter] = d_inf(VOldCenter) + (dOld[idxCenter] - d_inf(VOldCenter))
+                                                                * exp(-dt * (alpha_d(VOldCenter) + beta_d(VOldCenter)));
                     
-                    fNew[idxCenter] = f_inf(VOld[idxCenter]) + (fOld[idxCenter] - f_inf(VOld[idxCenter]))
-                                                                * exp(-dt * (alpha_f(VOld[idxCenter]) + beta_f(VOld[idxCenter])));
+                fNew[idxCenter] = f_inf(VOldCenter) + (fOld[idxCenter] - f_inf(VOldCenter))
+                                                                * exp(-dt * (alpha_f(VOldCenter) + beta_f(VOldCenter)));
                    
-                    /*
-                    // for steady state's calculation
-                    VNew[idxCenter] = VRest;
-                    */
-
                     
-                    //////////////////
-                    // "discrete diffusion" step
-                    VNew[idxCenter] = VOld[idxCenter]
-                    // uncomment if cells are connected; otherwize --- Nans
-                     + dt / Cm * (
-                            Dx  * (VOld[idxRight] - 2 * VOld[idxCenter] + VOld[idxLeft])
-                            + Dy  * (VOld[idxUp] - 2 * VOld[idxCenter] + VOld[idxDown])
+                //////////////////
+                // Euler method's step; no operator splitting is used
+                VNew[idxCenter] = VOldCenter
+                // uncomment if cells are connected; otherwize --- Nans
+                     + dt * (
+                            DX / (hx * hx)  * (VOld[idxRight] - 2 * VOldCenter + VOld[idxLeft])
+                            + DY /(hy * hy)  * (VOld[idxUp] - 2 * VOldCenter + VOld[idxDown])
                     )
-                    + dt / Cm * (TotalIonCurrent(idxCenter, VOld[idxCenter], mOld[idxCenter],
+                    + dt / Cm * ( TotalIonCurrent(idxCenter, VOldCenter, mOld[idxCenter],
                                                              hOld[idxCenter], pOld[idxCenter], 
                                                             qOld[idxCenter], dOld[idxCenter], fOld[idxCenter],
-                                                            INaOld, IKOld, ILeakOld, IHyperpolarOld, ISlowOld)
-                                                                         + I_Stim(i, j, 0.*1e0)); // "standart" I_stim = 1e0;
-                    
-               //} // if
-               
-               
-
-               /*
-               // the borders: Neumann boundary conditions
-               else
-               {
-                    int idxNear;
-                    
-                    if ((i == 0) && (j >= 1) && (j <= numPointsY - 1)) // left border, except for corner cells
-                        idxNear = CalculateLinearCoordinate(i + 1, j, numPointsX);
-                    else if ((j == 0) && (i >= 1) && (i <= numPointsX - 1)) // bottom, except for corner cells
-                        idxNear = CalculateLinearCoordinate(i, j + 1, numPointsX);
-                    else if ((j == numPointsY) && (i >= 1) && (i <= numPointsX - 1)) // top, except for corner cells
-                        idxNear = CalculateLinearCoordinate(i, j - 1, numPointsX);
-                    else if ((i == numPointsX) && (j >= 1) && (j <= numPointsY - 1)) // right, except for corner cells
-                        idxNear = CalculateLinearCoordinate(i - 1, j, numPointsX);
-                    else { // if corner cell
-                        continue; // do nothing, continue the "i,j" loop
-                    }
-
-                    // what about corner cells? for now, they are not treated (?)
-                    // Neumann boundary cond setting
-                    VNew[idxCenter] = VNew[idxNear];
-                    mNew[idxCenter] = mNew[idxNear];
-                    hNew[idxCenter] = hNew[idxNear];
-                    pNew[idxCenter] = pNew[idxNear];
-                    qNew[idxCenter] = qNew[idxNear];
-                    dNew[idxCenter] = dNew[idxNear];
-                    fNew[idxCenter] = fNew[idxNear];
-               }
-
-            */
+                                                            INaOld, IKOld, ILeakOld, IHyperpolarOld, ISlowOld));
+                                                                        //  /+ I_Stim(i, j, 0.*1e0) ); // "standart" I_stim = 1e0;
 
             } // for i
     } // for j
@@ -757,44 +732,44 @@ deviceptr(tmp)
     #pragma acc wait(0, 1)      
 
 
-        if ( (stepNumber % 2000) == 0)  // output each 10 msec: 10/dt = 2000
-        {
-            //if ( (stepNumber) % (int)(T/dt/500)  == 0 ) {
-            #pragma acc update host(VOld[0:numPointsTotal], mOld[0:numPointsTotal], hOld[0:numPointsTotal], \
-            pOld[0:numPointsTotal], qOld[0:numPointsTotal], dOld[0:numPointsTotal], fOld[0:numPointsTotal], \
-            INaOld[0:numPointsTotal], IKOld[0:numPointsTotal], ILeakOld[0:numPointsTotal], IHyperpolarOld[0:numPointsTotal], \
-            ISlowOld[0:numPointsTotal])
+    if ( (stepNumber % stepsOutput /* 1000 */ /* 2000 */) == 0)  // output each 10 ms: 10/dt = 2000; each 5 ms: 5/dt = 1000
+    {
+        //if ( (stepNumber) % (int)(T/dt/500)  == 0 ) {
+        #pragma acc update host(VOld[0:numPointsTotal]) /*, mOld[0:numPointsTotal], hOld[0:numPointsTotal], \
+        pOld[0:numPointsTotal], qOld[0:numPointsTotal], dOld[0:numPointsTotal], fOld[0:numPointsTotal], \
+        INaOld[0:numPointsTotal], IKOld[0:numPointsTotal], ILeakOld[0:numPointsTotal], IHyperpolarOld[0:numPointsTotal], \
+        ISlowOld[0:numPointsTotal]) */
             
-            //variablesOld[V_] = VOld;
-            //variablesOld[m_] = mOld;
-            //variablesOld[h_] = hOld;
-            //variablesOld[p_] = pOld;
-            //variablesOld[q_] = qOld;
-            //variablesOld[d_] = dOld;
-            //variablesOld[f_] = fOld;
-            //variablesOld[INa_] = INaOld;
-            //variablesOld[IK_] = IKOld;
-            //variablesOld[ILeak_] = ILeakOld;
-            //variablesOld[IHyperpolar_] = IHyperpolarOld;
-            //variablesOld[ISlow_] = ISlowOld;
+        //variablesOld[V_] = VOld;
+        //variablesOld[m_] = mOld;
+        //variablesOld[h_] = hOld;
+        //variablesOld[p_] = pOld;
+        //variablesOld[q_] = qOld;
+        //variablesOld[d_] = dOld;
+        //variablesOld[f_] = fOld;
+        //variablesOld[INa_] = INaOld;
+        //variablesOld[IK_] = IKOld;
+        //variablesOld[ILeak_] = ILeakOld;
+        //variablesOld[IHyperpolar_] = IHyperpolarOld;
+        //variablesOld[ISlow_] = ISlowOld;
 
-            int outNumber = stepNumber;
+        int outNumber = stepNumber;
                 
-            // output 2VTKs in a loop over enums
-            for (int k = 0; k < NUM_VARS; k++)
-            {    
-                Write2VTK_2D_noGhosts(numPointsX, variablesOld[k], hx, outNumber, k); // for now: numPointsX == numPointsY
-                
-                //Write2VTKWithGhosts(numPointsX, variablesOld[V_], hx, outNumber); // for now: numPointsX == numPointsY
-                //Write2VTK_2D_noGhosts(numPointsX, variablesOld[V_], hx, outNumber, k); // for now: numPointsX == numPointsY
-                //Write2VTK_2D_noGhosts(numPointsX, variablesOld[INa_], hx, outNumber, "INa"); // for now: numPointsX == numPointsY
-            }
-            
-            //Write2VTK_2D(numPointsX, variables[V_], hx, counterOutput); // for now: numPointsX == numPointsY
+        // output 2VTKs in a loop over enums
+        //for (int k = 0; k < NUM_VARS; k++)
+        //{    
+            Write2VTK_2D_noGhosts(numPointsX, variablesOld[V_], hx, outNumber, V_); // for now: numPointsX == numPointsY
+            //Write2VTK_2D(numPointsX, variablesOld[V_], hx, outNumber, V_); // for now: numPointsX == numPointsY
+        //}
 
-            printf("Progress: %.2f %% completed\n", 100.*stepNumber*dt/T);
-	        counterOutput += 1;
-        }
+        real timeBetweenOutputs = (real)(clock() - startOfTimestep) / CLOCKS_PER_SEC / 3600. * 60.; // in minutes
+        real time4dtAvg = timeBetweenOutputs / (real)stepsOutput; // average only for timesteps between 2 conseq. outputs;
+        // != average for the whole "while(t < T)" loop
+        
+        int numdtRemaining = (int)T/dt - stepNumber;
+        printf("Progress: %.2f %% completed || time remaining: %.0f min\n", 100.*stepNumber*dt/T, time4dtAvg * numdtRemaining);
+	    counterOutput += 1;
+    }
         
         tCurrent += dt;
         stepNumber += 1;
@@ -818,29 +793,11 @@ deviceptr(tmp)
         tmp = dOld; dOld = dNew; dNew = tmp;
         ///// swap f
         tmp = fOld; fOld = fNew; fNew = tmp;
-        
-        /*
-        ///// swap INa
-        tmp = INaOld; INaOld = INaNew; INaNew = tmp;
-        ///// swap IK
-        tmp = IKOld; IKOld = IKNew; IKNew = tmp;
-        ///// swap ILeak
-        tmp = ILeakOld; ILeakOld = ILeakNew; ILeakNew = tmp;
-        ///// swap IHyperpolar
-        tmp = IHyperpolarOld; IHyperpolarOld = IHyperpolarNew; IHyperpolarNew = tmp;
-        ///// swap ISlow
-        tmp = ISlowOld; ISlowOld = ISlowNew; ISlowNew = tmp;
-        */
-        /* ((stepNumber % (10* 5000)) == 0) {
-            #pragma acc update host(VOld[0:numPointsTotal]) 
-	        for(const auto& variable: variables) {
-                Write2VTK(variable.first, numPointsX, variable.second, hx, counterOutput); // for now: numPointsX == numPointsY
-                //Write2VTK("V", numPointsX, variables["V"], hx, counterOutput); // for now: numPointsX == numPointsY
-            }
-            printf("Step #%d is performed\n", stepNumber);
-	        counterOutput++;
-        }*/
 
+
+        // writing elapsed time
+        //real timeOfTimestep = (real)(clock() - startOfTimestep)/CLOCKS_PER_SEC/3600.;
+        
 
     } // while (tCurrent < T)
 
@@ -863,30 +820,13 @@ deviceptr(tmp)
     fprintf(ff, "%.6e", elapsedTime); // in sec.
     fclose(ff);
     
+
     // cleaning up
     for (int k = 0; k < NUM_VARS; k++)
     {
         free(variablesOld[k]);
         free(variablesNew[k]);
     }
-
-    /*
-    // cleaning up OLD VERS
-    free(VOld);
-    free(VNew);
-    free(mOld);
-    free(mNew);
-    free(hOld);
-    free(hNew);
-    free(pOld);
-    free(pNew);
-    free(qOld);
-    free(qNew);
-    free(dOld);
-    free(dNew);
-    free(fOld);
-    free(fNew);
-    */
 
     return 0;
 }

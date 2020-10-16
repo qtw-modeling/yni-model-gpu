@@ -229,7 +229,7 @@ int main()
     tCurrent = time0;
     while (tCurrent <= time1)
     {
-        if ( /* (tCurrent >= time0)  && */ (stepNumberAfterTime0 % 100 == 0)) // print to file each 5 msec: 5/dt = 1000
+        if ( /* (tCurrent >= time0)  && */ (stepNumberAfterTime0 % 10 == 0)) // print to file each 5 msec: 5/dt = 1000
         {    
             real PHASE = 2*M_PI * (tCurrent - time0) / period; // standart PHASE calc formula
 
@@ -292,8 +292,8 @@ int main()
 
     fclose(fp);
 
+/*
     // DEBUG: checking reading the binary file
-    /* открытие для чтения */
     if( (fp = fopen("phase_data_yni_model.bin", "rb")) == NULL) 
     {
         printf("Cannot open file");
@@ -305,20 +305,20 @@ int main()
     
 for (int ii = 0; ii <= 20; ii++)
 {
-    /* чтение за раз всего массива balance */
+    // чтение за раз всего массива balance
     //for (int ii = 0; ii < SMTH; ii++)
     //{
         //fread(&PHASE4Debug, sizeof(real), 1, fp);
         fread(stateOfPhase4Debug, 7*sizeof(real), 1, fp);
     //}
 
-    /* вывод содержимого массива */
+    // вывод содержимого массива
     //printf("PHASE = %.2f\n", PHASE4Debug);
     for(int i = 0; i <= 6; i++) 
         printf("%.2f\n", stateOfPhase4Debug[i]);
 }
     
-    /*
+    
     // the phase of next chuck
     //fread(&PHASE4Debug, sizeof(real), 1, fp);
     fread(stateOfPhase4Debug, 7*sizeof(real), 1, fp);
@@ -327,8 +327,9 @@ for (int ii = 0; ii <= 20; ii++)
     for(int i = 0; i <= 6; i++) 
         printf("%.2f\n", stateOfPhase4Debug[i]);
 
-    */
+    
     fclose(fp);
+*/
 
     return 0;
 }

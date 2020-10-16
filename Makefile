@@ -1,13 +1,13 @@
-all: compile_cpu compile_gpu
+all: cpu gpu
 
-compile_cpu:
-	pgcc main_yni.c CurrentSlow.c CurrentNa.c CurrentK.c CurrentLeak.c CurrentHyperpolar.c extra.c -o exec_yni_cpu
+cpu:
+	pgcc main_yni.c CurrentSlow.c CurrentNa.c CurrentK.c CurrentLeak.c CurrentHyperpolar.c extra.c -o exe_yni_cpu
 
-compile_gpu:
-	pgcc -acc -fast -ta=nvidia -Minfo=accel main_yni.c CurrentSlow.c CurrentNa.c CurrentK.c CurrentLeak.c CurrentHyperpolar.c extra.c -o exec_yni_gpu
+gpu:
+	pgcc -acc -fast -ta=tesla -Minfo=accel main_yni.c CurrentSlow.c CurrentNa.c CurrentK.c CurrentLeak.c CurrentHyperpolar.c extra.c -o exe_yni_gpu
 
 clear_output:
 	rm output/*.vtk
 
 phase:
-	pgcc WritePhaseDataIntoFile.c CurrentSlow.c CurrentNa.c CurrentK.c CurrentLeak.c CurrentHyperpolar.c -o exec_yni_phase
+	pgcc WritePhaseDataIntoFile.c CurrentSlow.c CurrentNa.c CurrentK.c CurrentLeak.c CurrentHyperpolar.c -o exe_yni_phase
