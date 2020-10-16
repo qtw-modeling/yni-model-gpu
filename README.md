@@ -1,5 +1,5 @@
 # yni_model
-Yanagihara-Noma-Irisawa ionic model of the SAN cell (rabbit).
+Yanagihara-Noma-Irisawa (1980) ionic model of the SAN cell (rabbit).
 
 A repo containing GPU-code (OpenACC) for numerical simulation of myocardium tissue using the Yanagihara-Noma-Irisawa (1980) ionic model.
 
