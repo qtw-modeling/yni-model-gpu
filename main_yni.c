@@ -40,20 +40,22 @@
 #define dt 0.005 // old val = 1e-4 // timestep (in ms)
 
 // model parameters
-#define Cm 1.
-#define VRest (-60.) // NOTE: there exists no resting potential for SA node
+#define Cm 1. // in muF/cm^2; is surface density 
+#define CM (20e-6) // is abs. value; in muF; original value == 20 pF
+#define VRest (-60.) // NOTE: there exists no resting potential for SAN's cells
 
-#define GX (110e-5) //  in mS; 6e-5 mS --- is equal to 60 nS in article SAN-fibros, 2018
-#define GY (110e-5) // in mS; is equal to 60 nS in article SAN-fibros, 2018
+#define GX (7e-5) // (6e-5) //  in mS; 6e-5 mS --- is equal to 60 nS in article SAN-fibros(2018)
+#define GY (7e-5) // (6e-5) // in mS; is equal to 60 nS in article SAN-fibros, 2018
 
-#define CELL_SIZE (7e-3) // in cm; is equal to 70 mu*m in article SAN-fibros, 2018
+//#define CELL_SIZE (7e-3) // in cm; is equal to 70 mu*m in article SAN-fibros(2018)
+#define CELL_DIAM (5e-3) // (7e-3) // in cm; is equal to 70 mu*m in article SAN-fibros(2018); square cell
 
 // tissue parameters
-#define DX (GX/Cm) //*CELL_SIZE*CELL_SIZE)  // (1.5e-4) // (60e-3) // (6*7e-3)  // conductivity
-#define DY (GY/Cm) //*CELL_SIZE*CELL_SIZE)  // (1.5e-4) // (60e-3) // (6*7e-3)  // conductivity
+#define DX (GX*CELL_DIAM*CELL_DIAM/CM)  // (60e-3) // (6*7e-3)  // conductivity
+#define DY (GY*CELL_DIAM*CELL_DIAM/CM) // (60e-3) // (6*7e-3)  // conductivity
 
-#define AREA_SIZE_X (1.) // (10.) // should be in cm
-#define AREA_SIZE_Y (1.) // (10.) // should be in cm
+#define AREA_SIZE_X (0.5) // (1.4) // in cm; from article SAN-fibros(2018)
+#define AREA_SIZE_Y (0.5) // (1.4) // in cm; from article SAN-fibros(2018)
 
 // Currents are in the end of the enum
 enum vars {V_, m_, h_, p_, q_, d_, f_, INa_, IK_, ILeak_, IHyperpolar_, ISlow_};
@@ -514,8 +516,8 @@ int main(int argc, char** argv)
     int numPointsY = numCellsY + 2; // same
     int numPointsTotal = numPointsX * numPointsY;
 
-    real hx = AREA_SIZE_X / (numPointsX - 1);
-    real hy = AREA_SIZE_Y / (numPointsY - 1);
+    real hx = AREA_SIZE_X / numCellsX; // AREA_SIZE_X / (numPointsX - 1);
+    real hy = AREA_SIZE_Y / numCellsY; // AREA_SIZE_Y / (numPointsY - 1);
 
     const char* T_s = argv[2];
     const int T = atoi(T_s); // atoi(argv[2]);

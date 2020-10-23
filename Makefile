@@ -6,7 +6,7 @@ cpu:
 gpu:
 	pgcc -acc -fast -ta=tesla -Minfo=accel main_yni.c CurrentSlow.c CurrentNa.c CurrentK.c CurrentLeak.c CurrentHyperpolar.c extra.c -o exe_yni_gpu
 
-clear_output:
+clear_out:
 	rm output/*.vtk
 
 phase:
