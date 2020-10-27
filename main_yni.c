@@ -37,9 +37,9 @@
 //#define hx 0.07 //1. // uncomment if cells are connected // (1./numSegmentsX)
 //#define hy 0.07 //1. // uncomment if cells are connected // (1./numSegmentsY)
 //#define T (5000.) //(1000.) // old val: 500 // endtime (in ms)
-#define dt 0.005 // old val = 1e-4 // timestep (in ms)
+#define dt 0.005 // 0.005 --- old "main" val // old val = 1e-4 // timestep (in ms)
 
-// model parameters
+// model's parameters
 #define Cm 1. // in muF/cm^2; is surface density 
 #define CM (20e-6) // is abs. value; in muF; original value == 20 pF
 #define VRest (-60.) // NOTE: there exists no resting potential for SAN's cells
@@ -67,73 +67,6 @@ real* MemAlloc(int n)
 }
 
 
-void Write2VTK(const int n, real* p, const real h, const int step)
-{
-    char fn[256];
-    sprintf(fn, "./output/V.%d.vtk", step); 
-
-    // C code
-    FILE* f = fopen(fn, "w");
-    fprintf(f, "# vtk DataFile Version 3.0\nSolution\nASCII\nDATASET RECTILINEAR_GRID\n");
-    fprintf(f, "DIMENSIONS %d %d 1\n", n + 1, n + 1);
-    fprintf(f, "X_COORDINATES %d double\n", n + 1);
-
-    int i;
-    for (i = 0; i < n +1; i++)
-    {
-        fprintf(f, "%.2e ", i*h);
-    }
-    fprintf(f, "\n");
-
-    fprintf(f, "Y_COORDINATES %d double\n", n + 1);
-    for (i = 0; i < n +1; i++)
-    {
-        fprintf(f, "%.2e ", i*h);
-    }
-    fprintf(f, "\n");
-
-    fprintf(f, "Z_COORDINATES 1 double\n0\n");
-    fprintf(f, "CELL_DATA %d\n", (n * n));
-    fprintf(f, "SCALARS V_membrane double\nLOOKUP_TABLE default\n");    
-    
-    int j;
-    for (j = 0; j < n; j++) {
-        for (i = 0; i < n; i++)
-            fprintf(f, "%.2e ",  p[j * n + i]);
-        fprintf(f, "\n");
-    }
-
-    fclose(f);
-
-
-/* C++ code
-    std::fstream f(fn, std::ios::out);
-    f << "# vtk DataFile Version 3.0" << std::endl;
-    f << "Solution" << std::endl;
-    f << "ASCII" << std::endl;
-    f << "DATASET RECTILINEAR_GRID" << std::endl;
-    f << "DIMENSIONS " << n + 1 << " " << n + 1 << " 1" << std::endl;
-    f << "X_COORDINATES " << n + 1 << " double" << std::endl;
-    for (int i = 0; i < n + 1; i++)
-        f << i * h << " ";
-    f << std::endl;
-    f << "Y_COORDINATES " << n + 1 << " double" << std::endl;
-    for (int i = 0; i < n + 1; i++)
-        f << i * h << " ";
-    f << std::endl;
-    f << "Z_COORDINATES 1 double\n0" << std::endl;
-    f << "CELL_DATA " << (n * n) << std::endl;
-    f << "SCALARS V_membrane double\nLOOKUP_TABLE default" << std::endl;
-    for (int j = 0; j < n; j++) {
-        for (int i = 0; i < n; i++)
-            f << p[j * n + i] << " ";
-        f << std::endl;
-    }
-    f.close();
-    */
-}
-
-
 int CalculateLinearCoordinate_CPU(int i, int j, int numPointsX) {
     return i + j*numPointsX;
 }
@@ -142,6 +75,7 @@ int CalculateLinearCoordinate_CPU(int i, int j, int numPointsX) {
 int CalculateLinearCoordinate(int i, int j, int numPointsX) {
     return i + j*numPointsX;
 }
+
 
 // gating vars kinetic functions' definitions
 //////////////////////////////////////////////
@@ -192,55 +126,6 @@ real h_inf_CPU(real V) {
     return alpha_h_CPU(V) / (alpha_h_CPU(V) + beta_h_CPU(V));
 }
 
-
-// GPU versions of functions
-/*
-#pragma acc routine
-real alpha_n(real V) {
-    return 0.01 * (V + 55.0) / (1.0 - exp(-(V + 55.0) / 10.0));
-}
-
-#pragma acc routine
-real beta_n(real V) {
-    return 0.125 * exp(-(V + 65.0) / 80.0);
-}
-
-#pragma acc routine
-real n_inf(real V) {
-    return alpha_n(V) / (alpha_n(V) + beta_n(V));
-}
-*/
-/*
-#pragma acc routine
-real alpha_m(real V) {
-    return 0.1*(V + 40.0)/(1.0 - exp(-(V + 40.0)/10.0));
-}
-
-#pragma acc routine
-real beta_m(real V) {
-    return 4.0*exp(-(V + 65.0) / 18.0);
-}
-
-#pragma acc routine
-real m_inf(real V) {
-    return alpha_m(V) / (alpha_m(V) + beta_m(V));
-}
-
-#pragma acc routine
-real alpha_h(real V) {
-    return 0.07*exp(-(V + 65.5) / 20.0);
-}
-
-#pragma acc routine
-real beta_h(real V) {
-    return 1.0 / (1.0 + exp(-(V + 35.5) / 10.0));
-}
-
-#pragma acc routine
-real h_inf(real V) {
-    return alpha_h(V) / (alpha_h(V) + beta_h(V));
-}
-*/
 
 #pragma acc routine
 real I_Stim(int i, int j, real value)
@@ -360,6 +245,9 @@ real* f, real value, int numPointsX, int numPointsY, real hx, real hy)
                 //int iTilde = i - (numPointsX/2); // i = i^{star}; iTilde = iTilde_{star}
 
                 // for phase calculation: using angle in polar coords
+
+                /*
+                // case 1: discrete media and nechetniy number of cells
                 real LTotal = numPointsX*hx; // should = numPointsY*hy
                 real L = (j*hy + hy/2.) - (numPointsY*hy/2.); // LTotal/2. - (j*hx + hx/2.) --- old formula, when j-order was incorrect
                 real lsmall = LTotal/2. - ( (numPointsX - 1 - i)*hx + hx/2.);
@@ -373,8 +261,23 @@ real* f, real value, int numPointsX, int numPointsY, real hx, real hy)
                 {
                     phase += 2*M_PI;
                 }
+                */
+
+                // case 2: continious media and chetniy (as req in GPU-calcs) number of "cells";
+                // ghost "cells" ARE INCLUDED in the process
+                real LTotal = (numPointsX - 2)*hx; // same should be in Y-axis
+                real L = (j*hy + hy/2.) - (LTotal/2. + hy);
+                real lsmall = (i*hx + hx/2.) - (LTotal/2. + hx);
+                real phase = atan2(L, lsmall); // = angle in polar coords; use atan2() func instead of atan() !
                 
+                //phase = phase - M_PI/2.; // phase shift according to R.Syunyaev article, 2017
                 
+                // check sign: atan2() returns vals. from [-pi, pi]
+                if (phase < 0)
+                {
+                    phase += 2*M_PI;
+                }
+
                 //printf("Phase = %.2f deg.\n", phase*180/M_PI);
                 //std::cin.get();
                 // TODO //////////////////////////////////////////////////////////////
@@ -516,12 +419,14 @@ int main(int argc, char** argv)
     int numPointsY = numCellsY + 2; // same
     int numPointsTotal = numPointsX * numPointsY;
 
-    real hx = AREA_SIZE_X / numCellsX; // AREA_SIZE_X / (numPointsX - 1);
-    real hy = AREA_SIZE_Y / numCellsY; // AREA_SIZE_Y / (numPointsY - 1);
+    real hx = AREA_SIZE_X / numCellsX; // AREA_SIZE_X / (numPointsX - 1); TODO: check
+    real hy = AREA_SIZE_Y / numCellsY; // AREA_SIZE_Y / (numPointsY - 1); TODO: check
 
     const char* T_s = argv[2];
     const int T = atoi(T_s); // atoi(argv[2]);
 
+
+    const char* mode = argv[3];
     // allocating memory
     
     // C++11 style alloc
@@ -602,13 +507,15 @@ int main(int argc, char** argv)
     SetInitialConditions_CPU(VOld, mOld, /* nOld,*/ hOld, pOld, qOld, dOld, fOld, 0., numPointsX, numPointsY, hx, hy);
     //SetInitialConditions_CPU(VNew, mNew, /* nNew,*/ hNew, pNew, qNew, dNew, fNew, 0.); // for avoiding "junk" values in all '...New' arrays
 
+    // various output params
     real tCurrent = 0.;
     int stepNumber = 0;
     int counterOutput = 1;
-    const int stepsOutput = 1000; // output each 10 ms: 10/dt = 2000; each 5 ms: 5/dt = 1000
+    const real timeIntervalOutput = 5.; // in ms
+    const int stepsOutput = (int)(timeIntervalOutput/dt); // 1000; // output each 10 ms: 10/dt = 2000; each 5 ms: 5/dt = 1000
     int startOfTimestep; // , timeBetweenOutputs;
 
-    printf("Timestepping begins...\n");
+    printf("Timestepping begins\n");
     clock_t start = clock();
 
 // pragmas without "-acc" flag --- are ignored?
@@ -692,7 +599,8 @@ deviceptr(tmp)
                                                             qOld[idxCenter], dOld[idxCenter], fOld[idxCenter],
                                                             INaOld, IKOld, ILeakOld, IHyperpolarOld, ISlowOld));
                                                                         //  /+ I_Stim(i, j, 0.*1e0) ); // "standart" I_stim = 1e0;
-
+                    
+                    // dt / Cm --- is correct! Capacity density (Cm) has to be here
             } // for i
     } // for j
 	} // acc parallel 4 inner cells
@@ -814,21 +722,28 @@ deviceptr(tmp)
     // storing output file's name in char[]
     /* string */ // char tmp_output_file[256];
     // sprintf(tmp_output_file, argv[4]);
-    char* outFile4Timing = concat( concat(concat(concat("timing_dim_", numCellsX_s), "x"), numCellsX_s), 
+    char* outFile4Timing = concat( concat(concat(concat(concat(mode, "_timing_dim_"), numCellsX_s), "x"), numCellsX_s), 
                             concat(concat("_cells_T_", T_s), "_ms.txt"));
 
     // printing elapsed time into a file
-    FILE* ff = fopen(concat("./timings/", outFile4Timing), "w"); // "timings" --- folder name
+    FILE* ff;
+    if ((ff = fopen(concat("./timings/", outFile4Timing), "w")) == NULL) // "timings" --- folder name
+    {
+        printf("Cannot open ./timings/-dir to writing. Aborting.");
+        exit(1); //return 1;
+    }
+
     fprintf(ff, "%.6e", elapsedTime); // in sec.
     fclose(ff);
     
-
+    /*
     // cleaning up
     for (int k = 0; k < NUM_VARS; k++)
     {
         free(variablesOld[k]);
         free(variablesNew[k]);
     }
+    */
 
     return 0;
 }
