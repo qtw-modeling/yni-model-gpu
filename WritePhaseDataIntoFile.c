@@ -1,5 +1,6 @@
 #include "state.h"
 #include "common.h" // one for all includes
+#include "extra.h"
 #include "CurrentNa.h"
 #include "CurrentK.h"
 #include "CurrentLeak.h"
@@ -155,14 +156,22 @@ int main()
             // when 2nd threshold time (t1) is found: set t1 and then exit the loop
             if (isThresholdFound == true)
             {
+                real timeOld = tCurrent;
+                real timeNew = tCurrent + dt;
+                //time1 = CalculateLinearInterpolate(THRESHOLD, Old->V, New->V, tCurrent, tCurrent + dt); // tCurrent; // nearest-neighbour interpolaion; change to linear!
+                time1 = CalculateLinearInterpolate(THRESHOLD, Old->V, New->V, timeOld, timeNew);
 
-                time1 = tCurrent; // nearest-neighbour interpolaion; change to linear!
                 break;            // phase(V)
             }
             
             else // when threshold time (t0) is found: set t0
             {
-                time0 = tCurrent; // nearest-neighbour interpolaion; change to linear!
+                real timeOld = tCurrent;
+                real timeNew = tCurrent + dt;
+                time0 = CalculateLinearInterpolate(THRESHOLD, Old->V, New->V, timeOld, timeNew);
+                //time0 = CalculateLinearInterpolate(THRESHOLD, Old->V, New->V, tCurrent, tCurrent + dt); // tCurrent; // nearest-neighbour interpolaion; change to linear!
+                
+                
                 isThresholdFound = true;
                 //return ; // phase(V)
 
@@ -234,6 +243,8 @@ int main()
             real PHASE = 2*M_PI * (tCurrent - time0) / period; // standart PHASE calc formula
 
             //VOfPhase = Old->V; // nearest-neighbour iterpolation; change to linear!
+            // ... we dont need linear interpolation here: as here there is just printing data to a bin-file
+            // we will need linear interpolation only when reading bin-file while setting ICs (ie initial phase)
             stateOfPhase[V_] = Old->V;
             stateOfPhase[m_] = Old->m;
             stateOfPhase[h_] = Old->h;
