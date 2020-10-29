@@ -37,7 +37,7 @@
 //#define hx 0.07 //1. // uncomment if cells are connected // (1./numSegmentsX)
 //#define hy 0.07 //1. // uncomment if cells are connected // (1./numSegmentsY)
 //#define T (5000.) //(1000.) // old val: 500 // endtime (in ms)
-#define dt 0.005 // 0.005 --- old "main" val // old val = 1e-4 // timestep (in ms)
+#define dt 1e-4 // 0.005 // 0.005 --- old "main" val // old val = 1e-4 // timestep (in ms)
 
 // model's parameters
 #define Cm 1. // in muF/cm^2; is surface density 
@@ -297,13 +297,15 @@ real* f, real value, int numPointsX, int numPointsY, real hx, real hy)
                 f[idxCenter] = stateForPhase[f_]; //1.; //1.;
 
                 // for progress checking: in percents
-                //printf("Set. initial cond: %.2f percent completed\n", 
-                //        100.*idxCenter / CalculateLinearCoordinate_CPU(numPointsX - 1, numPointsY - 1, numPointsX));
+                if ( (idxCenter % (int)1e3) == 0) // output each 1e3 cell
+                {
+                printf("Setting IC: %.2f %% completed\n", 
+                        100.*idxCenter / CalculateLinearCoordinate_CPU(numPointsX - 1, numPointsY - 1, numPointsX));
+                }
             }
     }
 
-    // after filling the whole area: "fill" borders wiht Neumann boundary cond.
-    // the borders: Neumann boundary conditions
+    // after filling the whole area: "fill" borders wiht Neumann BCs
     for (int j = 0; j < numPointsY; j++)
     {    
         for (int i = 0; i < numPointsX; i++)
@@ -511,11 +513,11 @@ int main(int argc, char** argv)
     real tCurrent = 0.;
     int stepNumber = 0;
     int counterOutput = 1;
-    const real timeIntervalOutput = 5.; // in ms
+    const real timeIntervalOutput = 5.; // 0.1; // 5.; // in ms
     const int stepsOutput = (int)(timeIntervalOutput/dt); // 1000; // output each 10 ms: 10/dt = 2000; each 5 ms: 5/dt = 1000
     int startOfTimestep; // , timeBetweenOutputs;
 
-    printf("Timestepping begins\n");
+    printf("\nTimestepping begins\n\n");
     clock_t start = clock();
 
 // pragmas without "-acc" flag --- are ignored?
@@ -736,14 +738,13 @@ deviceptr(tmp)
     fprintf(ff, "%.6e", elapsedTime); // in sec.
     fclose(ff);
     
-    /*
+    
     // cleaning up
     for (int k = 0; k < NUM_VARS; k++)
     {
         free(variablesOld[k]);
         free(variablesNew[k]);
     }
-    */
 
     return 0;
 }

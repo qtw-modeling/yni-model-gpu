@@ -10,4 +10,4 @@ clear_out:
 	rm output/*.vtk
 
 phase:
-	pgcc WritePhaseDataIntoFile.c CurrentSlow.c CurrentNa.c CurrentK.c CurrentLeak.c CurrentHyperpolar.c -o exe_yni_phase
+	pgcc WritePhaseDataIntoFile.c extra.c CurrentSlow.c CurrentNa.c CurrentK.c CurrentLeak.c CurrentHyperpolar.c -o exe_yni_phase
