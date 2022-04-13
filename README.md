@@ -1,8 +1,9 @@
 # yni_model
-Yanagihara-Noma-Irisawa (1980) ionic model of the SAN cell (rabbit).
+GPU-code (OpenACC) for numerical simulation of myocardium tissue using the Yanagihara-Noma-Irisawa ionic model (1980, rabbit SAN's cell).
 
-A repo containing GPU-code (OpenACC) for numerical simulation of myocardium tissue using the Yanagihara-Noma-Irisawa (1980) ionic model.
+Model of the tissue: 
+- 2D
+- gap junctions' conductivities = const
+- 1 type of cardiomyocytes present.
 
-Model of the tissue is as simple as possible: 2D, constant gap junctions' conductivities and 1 type of cardiomyocytes.
-
-Both discrete and continious media (i.e. "reaction-diffusion" or "cable equation") versions are possible.
+Calculations of both discrete and continious media's (i.e. reaction-diffusion/cable equation) models are feasible.
